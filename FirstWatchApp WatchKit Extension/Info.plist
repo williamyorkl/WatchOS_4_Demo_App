@@ -37,12 +37,14 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>WKAppBundleIdentifier</key>
-			<string>xyz.FirstWatchApp.watchkitapp</string>
+			<string>williamyorkl.pull-up-your-spine.watchkitapp</string>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.watchkit</string>
 	</dict>
 	<key>WKExtensionDelegateClassName</key>
 	<string>$(PRODUCT_MODULE_NAME).ExtensionDelegate</string>
+	<key>WKRunsIndependentlyOfCompanionApp</key>
+	<true/>
 </dict>
 </plist>

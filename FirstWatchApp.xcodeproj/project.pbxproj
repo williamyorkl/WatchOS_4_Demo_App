@@ -277,10 +277,12 @@
 				TargetAttributes = {
 					173B7DB820078D490016900C = {
 						CreatedOnToolsVersion = 9.2;
-						ProvisioningStyle = Manual;
+						LastSwiftMigration = "";
+						ProvisioningStyle = Automatic;
 					};
 					173B7DCC20078D490016900C = {
 						CreatedOnToolsVersion = 9.2;
+						LastSwiftMigration = "";
 						ProvisioningStyle = Automatic;
 						TestTargetID = 173B7DB820078D490016900C;
 					};
@@ -290,6 +292,7 @@
 					};
 					173B7DE420078D490016900C = {
 						CreatedOnToolsVersion = 9.2;
+						LastSwiftMigration = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -541,10 +544,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = "FirstWatchApp WatchKit Extension/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp.watchkitapp.watchkitextension;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) /usr/lib/swift @executable_path/Frameworks /usr/lib/swift @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine.watchkitapp.watchkitextension";
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -559,10 +562,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_COMPLICATION_NAME = Complication;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = "FirstWatchApp WatchKit Extension/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp.watchkitapp.watchkitextension;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) /usr/lib/swift @executable_path/Frameworks /usr/lib/swift @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine.watchkitapp.watchkitextension";
 				PRODUCT_NAME = "${TARGET_NAME}";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -577,11 +580,13 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				IBSC_MODULE = FirstWatchApp_WatchKit_Extension;
 				INFOPLIST_FILE = "FirstWatchApp WatchKit App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp.watchkitapp;
+				NEW_SETTING = "";
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine.watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -596,11 +601,13 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				IBSC_MODULE = FirstWatchApp_WatchKit_Extension;
 				INFOPLIST_FILE = "FirstWatchApp WatchKit App/Info.plist";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp.watchkitapp;
+				NEW_SETTING = "";
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine.watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -614,11 +621,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp;
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 4.0;
@@ -630,11 +638,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchApp;
+				PRODUCT_BUNDLE_IDENTIFIER = "williamyorkl.pull-up-your-spine";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 4.0;
@@ -648,7 +657,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchAppTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchAppTests;
@@ -665,7 +674,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = A8R4J5JA38;
+				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchAppTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.FirstWatchAppTests;

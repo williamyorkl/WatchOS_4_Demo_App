@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder.WatchKit.Storyboard" version="3.0" toolsVersion="13771" targetRuntime="watchKit" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" colorMatched="YES" initialViewController="AgC-eL-Hgc">
-    <device id="watch38" orientation="portrait">
-        <adaptation id="fullscreen"/>
-    </device>
+<document type="com.apple.InterfaceBuilder.WatchKit.Storyboard" version="3.0" toolsVersion="21507" targetRuntime="watchKit" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" colorMatched="YES" initialViewController="AgC-eL-Hgc">
+    <device id="watch38"/>
     <dependencies>
         <deployment identifier="watchOS"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="13772"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBWatchKitPlugin" version="13756"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBWatchKitPlugin" version="21501"/>
     </dependencies>
     <scenes>
         <!--Interface Controller-->
@@ -14,29 +11,43 @@
             <objects>
                 <controller id="AgC-eL-Hgc" customClass="InterfaceController" customModule="FirstWatchApp_WatchKit_App" customModuleProvider="target">
                     <items>
-                        <group width="1" height="1" alignment="left" layout="vertical" id="rKc-kS-caN">
+                        <label width="136" height="25" alignment="left" text="0" id="vLY-Er-4MU">
+                            <fontDescription key="font" style="UICTFontTextStyleTitle2"/>
+                        </label>
+                        <group width="1" height="62" alignment="left" layout="vertical" id="rKc-kS-caN" userLabel="Label Group">
                             <items>
-                                <label width="136" alignment="left" text="Count" id="nah-Eu-E1Z"/>
-                                <label width="1" alignment="center" verticalAlignment="center" text="--" textAlignment="center" id="qe0-Tk-YDM">
+                                <label width="1" height="17" alignment="center" verticalAlignment="center" text="--" textAlignment="center" id="qe0-Tk-YDM">
                                     <color key="textColor" red="0.94946735052464071" green="1" blue="0.90577503709135621" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                                     <fontDescription key="font" style="UICTFontTextStyleHeadline"/>
                                 </label>
-                                <button width="1" alignment="center" verticalAlignment="bottom" title="Reset" id="NEK-CY-yOU">
-                                    <variation key="device=watch42mm" alignment="center" verticalAlignment="bottom"/>
-                                    <connections>
-                                        <action selector="buttonTapped" destination="AgC-eL-Hgc" id="WRm-am-yyF"/>
-                                    </connections>
-                                </button>
+                                <label width="136" height="15" alignment="left" id="xk7-pH-mme"/>
                             </items>
                         </group>
+                        <button width="1" alignment="left" title="Pause" id="wsL-tX-MHM">
+                            <connections>
+                                <action selector="pauseTapped" destination="AgC-eL-Hgc" id="w11-AJ-3hz"/>
+                            </connections>
+                        </button>
+                        <button width="1" alignment="left" title="Start" id="OYN-Hn-flg">
+                            <connections>
+                                <action selector="startTapped" destination="AgC-eL-Hgc" id="Rol-SY-BNb"/>
+                            </connections>
+                        </button>
+                        <button width="1" alignment="center" verticalAlignment="bottom" title="Reset" id="NEK-CY-yOU">
+                            <variation key="device=watch42mm" alignment="center" verticalAlignment="bottom"/>
+                            <connections>
+                                <action selector="resetTapped" destination="AgC-eL-Hgc" id="Ypq-Xe-Dcz"/>
+                            </connections>
+                        </button>
                     </items>
                     <connections>
                         <outlet property="countLabel" destination="qe0-Tk-YDM" id="DDp-wM-05A"/>
-                        <outlet property="titleLabel" destination="nah-Eu-E1Z" id="wFg-wg-73D"/>
+                        <outlet property="logLabel" destination="xk7-pH-mme" id="i8R-2I-NgL"/>
+                        <outlet property="pullupLabel" destination="vLY-Er-4MU" id="ggU-6v-RAy"/>
                     </connections>
                 </controller>
             </objects>
-            <point key="canvasLocation" x="220" y="345"/>
+            <point key="canvasLocation" x="220" y="284.5"/>
         </scene>
         <!--Static Notification Interface Controller-->
         <scene sceneID="AEw-b0-oYE">
@@ -52,7 +63,7 @@
                     </connections>
                 </notificationController>
             </objects>
-            <point key="canvasLocation" x="220" y="643"/>
+            <point key="canvasLocation" x="174" y="643"/>
         </scene>
         <!--Notification Controller-->
         <scene sceneID="ZPc-GJ-vnh">

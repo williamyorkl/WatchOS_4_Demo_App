@@ -26,7 +26,7 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>xyz.FirstWatchApp</string>
+	<string>williamyorkl.pull-up-your-spine</string>
 	<key>WKWatchKitApp</key>
 	<true/>
 </dict>
