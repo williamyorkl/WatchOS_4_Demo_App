@@ -49,7 +49,7 @@ class ViewController: UIViewController {
         countLabel.text = String(countFromWatch)
         
 //        self.countMethod()
-        self.timer2()
+//        self.timer2()
     }
 }
 
