@@ -97,6 +97,8 @@ class InterfaceController: WKInterfaceController {
 
       override func awake(withContext context: Any?) {
           super.awake(withContext: context)
+          
+          loadSavedCount()
 
           if motionManager.isAccelerometerAvailable {
               motionManager.accelerometerUpdateInterval = 0.1
@@ -145,21 +147,17 @@ class InterfaceController: WKInterfaceController {
     
     // 初始化一个全局计时器
     func countMethod() {
-        self.countSecondTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer3 in
-            
+        self.countSecondTimer = Timer(timeInterval: 1.0, repeats: true) { timer3 in
             self.pullUpAccumulateTime += 1
             self.acceleLog = String(format: "已经坚持：%d 秒" ,self.pullUpAccumulateTime)
             
             if self.pullUpAccumulateTime % 10 == 0 {
-                // 吊单杠计次 + 1
                 self.pullUpCount += 1
                 WKInterfaceDevice.current().play(.success)
-                
-                // 上传数据到 habitica
                 self.sendRequestToHabitica(pullUpCount: self.pullUpCount)
             }
         }
-        
+        RunLoop.current.add(self.countSecondTimer, forMode: .commonModes)
     }
 
     
@@ -188,6 +186,20 @@ class InterfaceController: WKInterfaceController {
             return
         }
         
+        let typesToShare: Set = [HKObjectType.workoutType()]
+        healthStore.requestAuthorization(toShare: typesToShare, read: nil) { success, error in
+            DispatchQueue.main.async {
+                if success {
+                    print("✅ HealthKit 权限已获取")
+                    self.beginWorkoutSession()
+                } else {
+                    print("❌ HealthKit 权限被拒绝: \(error?.localizedDescription ?? "未知错误")")
+                }
+            }
+        }
+    }
+    
+    func beginWorkoutSession() {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
@@ -202,7 +214,12 @@ class InterfaceController: WKInterfaceController {
     }
     
     func stopWorkoutSession() {
-        workoutSession?.end()
+        guard let session = workoutSession else {
+            print("⏹️ Workout Session 不存在，跳过停止")
+            return
+        }
+        session.end()
+        workoutSession = nil
         print("⏹️ Workout Session 已停止")
     }
 
@@ -238,7 +255,7 @@ class InterfaceController: WKInterfaceController {
                                 })
 
             // Add the timer to the current run loop.
-            RunLoop.current.add(timer1, forMode: .defaultRunLoopMode)
+            RunLoop.current.add(timer1, forMode: .commonModes)
         }else {
             print("❌ 初始化失败：加速度传感器不可用")
         }
@@ -491,7 +508,14 @@ class InterfaceController: WKInterfaceController {
     var pullUpCount: Int = 0 {
         didSet {
             setPullUpCount(pullUpCount: String(pullUpCount))
+            UserDefaults.standard.set(pullUpCount, forKey: "savedPullUpCount")
+            UserDefaults.standard.synchronize()
         }
+    }
+    
+    func loadSavedCount() {
+        pullUpCount = UserDefaults.standard.integer(forKey: "savedPullUpCount")
+        print("📂 已加载保存的次数: \(pullUpCount)")
     }
     
     // 一、暂停
@@ -601,11 +625,8 @@ class InterfaceController: WKInterfaceController {
         }
     }
     
-    override func didDeactivate(){
-        
-        // 当 app 退出到后台的时候，唤醒的时候，重置数据
-        print("app 已经退出到后台")
-        self.resetTapped()
+ override func didDeactivate(){
+        print("📱 屏幕熄灭，应用进入后台（Workout Session 继续运行)")
     }
     
     
