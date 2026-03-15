@@ -333,19 +333,21 @@ struct ActiveView: View {
     let orangeColor: Color
     
     var body: some View {
-        GeometryReader { geometry in
+        let redColor = Color(red: 1.0, green: 0.27, blue: 0.23)
+        
+        return GeometryReader { geometry in
             let circleSize = min(geometry.size.width, geometry.size.height) - 16
             
             ZStack {
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 10)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 8)
                     
                     Circle()
                         .trim(from: 0, to: progress / 100)
                         .stroke(
                             holdState == .detecting ? Color.gray : orangeColor,
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                            style: StrokeStyle(lineWidth: 8, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
                         .animation(.easeInOut(duration: 0.3), value: progress)
@@ -355,63 +357,56 @@ struct ActiveView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.gray)
                         Text("\(reps)")
-                            .font(.system(size: 32, weight: .bold))
+                            .font(.system(size: 28, weight: .bold))
                             .foregroundColor(orangeColor)
                     }
-                    .offset(y: -circleSize * 0.32)
+                    .offset(y: -circleSize * 0.30)
                     
-                    VStack(spacing: 4) {
+                    VStack(spacing: 6) {
                         switch holdState {
                         case .waiting:
                             Image(systemName: "hand.raised")
-                                .font(.system(size: 32))
+                                .font(.system(size: 28))
                                 .foregroundColor(.gray.opacity(0.6))
                             Text("Raise Hand")
-                                .font(.system(size: 12))
+                                .font(.system(size: 11))
                                 .foregroundColor(.gray)
                             
                         case .detecting:
                             Text("\(detectSeconds)")
-                                .font(.system(size: 56, weight: .bold))
+                                .font(.system(size: 48, weight: .bold))
                                 .foregroundColor(.gray)
                             Text("of 5s")
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                                 .foregroundColor(.gray)
                             
                         case .holding:
                             Text("\(holdSeconds)")
-                                .font(.system(size: 56, weight: .bold))
+                                .font(.system(size: 48, weight: .bold))
                                 .foregroundColor(.white)
                             Text("of 10s")
-                                .font(.system(size: 14))
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .offset(y: circleSize * 0.08)
-                }
-                .frame(width: circleSize, height: circleSize)
-                
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        Button(action: onEnd) {
-                            Image(systemName: "stop.fill")
                                 .font(.system(size: 12))
                                 .foregroundColor(.gray)
-                                .frame(width: 36, height: 36)
-                                .background(Color.white.opacity(0.05))
-                                .cornerRadius(18)
+                        }
+                        
+                        Button(action: onEnd) {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(redColor)
+                                .frame(width: 40, height: 40)
+                                .background(redColor.opacity(0.15))
+                                .cornerRadius(20)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 18)
-                                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(redColor.opacity(0.3), lineWidth: 1)
                                 )
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
+                    .offset(y: circleSize * 0.10)
                 }
-                .padding(.trailing, 10)
-                .padding(.bottom, 10)
+                .frame(width: circleSize, height: circleSize)
+                .offset(y: 8)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
