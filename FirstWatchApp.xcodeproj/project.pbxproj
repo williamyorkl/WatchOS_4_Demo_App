@@ -22,6 +22,8 @@
 		173B7DEF20078D490016900C /* NotificationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173B7DEE20078D490016900C /* NotificationController.swift */; };
 		173B7DF120078D490016900C /* ComplicationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173B7DF020078D490016900C /* ComplicationController.swift */; };
 		173B7DF320078D490016900C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 173B7DF220078D490016900C /* Assets.xcassets */; };
+		7C82F8D82F664202005C0E74 /* PullUpTrackerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82F8D62F664201005C0E74 /* PullUpTrackerView.swift */; };
+		7C82F8D92F664202005C0E74 /* PullUpTrackerHostingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82F8D72F664202005C0E74 /* PullUpTrackerHostingController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +99,8 @@
 		173B7DF420078D490016900C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		173B7DF520078D490016900C /* PushNotificationPayload.apns */ = {isa = PBXFileReference; lastKnownFileType = text; path = PushNotificationPayload.apns; sourceTree = "<group>"; };
 		7C82F8D52F6069B8005C0E74 /* FirstWatchApp WatchKit Extension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "FirstWatchApp WatchKit Extension.entitlements"; sourceTree = "<group>"; };
+		7C82F8D62F664201005C0E74 /* PullUpTrackerView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PullUpTrackerView.swift; sourceTree = "<group>"; };
+		7C82F8D72F664202005C0E74 /* PullUpTrackerHostingController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PullUpTrackerHostingController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -181,6 +185,8 @@
 		173B7DE920078D490016900C /* FirstWatchApp WatchKit Extension */ = {
 			isa = PBXGroup;
 			children = (
+				7C82F8D72F664202005C0E74 /* PullUpTrackerHostingController.swift */,
+				7C82F8D62F664201005C0E74 /* PullUpTrackerView.swift */,
 				7C82F8D52F6069B8005C0E74 /* FirstWatchApp WatchKit Extension.entitlements */,
 				173B7DEA20078D490016900C /* InterfaceController.swift */,
 				173B7DEC20078D490016900C /* ExtensionDelegate.swift */,
@@ -381,9 +387,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				173B7DEF20078D490016900C /* NotificationController.swift in Sources */,
+				7C82F8D82F664202005C0E74 /* PullUpTrackerView.swift in Sources */,
 				173B7DF120078D490016900C /* ComplicationController.swift in Sources */,
 				173B7DED20078D490016900C /* ExtensionDelegate.swift in Sources */,
 				173B7DEB20078D490016900C /* InterfaceController.swift in Sources */,
+				7C82F8D92F664202005C0E74 /* PullUpTrackerHostingController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -572,7 +580,7 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Debug;
 		};
@@ -597,7 +605,7 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Release;
 		};
@@ -618,7 +626,7 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Debug;
 		};
@@ -639,7 +647,7 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Release;
 		};
