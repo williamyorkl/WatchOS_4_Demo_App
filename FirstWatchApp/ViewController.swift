@@ -50,7 +50,7 @@ class ViewController: UIViewController {
         
 //        self.countMethod()
 //        self.timer2()
-    }
+    }   
 }
 
 extension ViewController : WCSessionDelegate {

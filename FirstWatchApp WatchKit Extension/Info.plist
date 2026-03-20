@@ -4,6 +4,8 @@
 <dict>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>需要访问健康数据以记录运动</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>需要读取健康数据以追踪您的引体向上训练进度</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

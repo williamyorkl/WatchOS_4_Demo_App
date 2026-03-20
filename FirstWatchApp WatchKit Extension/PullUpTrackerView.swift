@@ -204,10 +204,12 @@ class PullUpTrackerViewModel: ObservableObject {
             
         case .detecting:
             if isHangingPose {
-                let duration = Date().timeIntervalSince(stateStartTime!)
-                if duration > detectingDuration {
-                    motionState = .confirmed
-                    stateStartTime = Date()
+                if let startTime = stateStartTime {
+                    let duration = Date().timeIntervalSince(startTime)
+                    if duration > detectingDuration {
+                        motionState = .confirmed
+                        stateStartTime = Date()
+                    }
                 }
             } else {
                 motionState = .idle
@@ -216,12 +218,14 @@ class PullUpTrackerViewModel: ObservableObject {
             
         case .confirmed:
             if isHangingPose {
-                let duration = Date().timeIntervalSince(stateStartTime!)
-                if duration > confirmedDuration {
-                    motionState = .active
-                    holdState = .detecting
-                    detectSeconds = 0
-                    WKInterfaceDevice.current().play(.start)
+                if let startTime = stateStartTime {
+                    let duration = Date().timeIntervalSince(startTime)
+                    if duration > confirmedDuration {
+                        motionState = .active
+                        holdState = .detecting
+                        detectSeconds = 0
+                        WKInterfaceDevice.current().play(.start)
+                    }
                 }
             } else {
                 motionState = .idle
@@ -239,13 +243,18 @@ class PullUpTrackerViewModel: ObservableObject {
             
         case .paused:
             if isHangingPose {
-                let duration = Date().timeIntervalSince(stateStartTime!)
-                if duration > 0.5 {
-                    motionState = .active
-                    stateStartTime = nil
-                    holdState = .detecting
-                    WKInterfaceDevice.current().play(.start)
+                if let startTime = stateStartTime {
+                    let duration = Date().timeIntervalSince(startTime)
+                    if duration > 0.5 {
+                        motionState = .active
+                        stateStartTime = nil
+                        holdState = .detecting
+                        WKInterfaceDevice.current().play(.start)
+                    }
                 }
+            } else {
+                motionState = .idle
+                stateStartTime = nil
             }
         }
     }
@@ -266,7 +275,7 @@ struct PullUpTrackerView: View {
         Group {
             switch viewModel.sessionState {
             case .idle:
-                IdleView(onStart: viewModel.startSession, orangeColor: orangeColor)
+                IdleView(onStart: viewModel.startSession)
             case .active:
                 ActiveView(
                     holdState: viewModel.holdState,
@@ -293,13 +302,12 @@ struct PullUpTrackerView: View {
 
 struct IdleView: View {
     let onStart: () -> Void
-    let orangeColor: Color
     
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "figure.pullup")
+            Image(systemName: "figure.run")
                 .font(.system(size: 48))
-                .foregroundColor(orangeColor)
+                .foregroundColor(.green)
             
             Text("Pull-up Tracker")
                 .font(.system(size: 18, weight: .bold))
@@ -315,7 +323,7 @@ struct IdleView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
-                    .background(orangeColor)
+                    .background(Color.green)
                     .cornerRadius(25)
             }
             .buttonStyle(PlainButtonStyle())
@@ -332,82 +340,96 @@ struct ActiveView: View {
     let onEnd: () -> Void
     let orangeColor: Color
     
+    private var accentColor: Color { .green }
+    private var ringBackgroundColor: Color { Color.white.opacity(0.15) }
+    private var secondaryTextColor: Color { .secondary }
+    private var progressColor: Color {
+        let p = progress
+        if p < 40 { return .green }
+        else if p < 80 { return .orange }
+        else { return .red }
+    }
+    
     var body: some View {
-        let redColor = Color(red: 1.0, green: 0.27, blue: 0.23)
-        
-        return GeometryReader { geometry in
-            let circleSize = min(geometry.size.width, geometry.size.height) - 16
+        GeometryReader { geometry in
+            let circleSize = min(geometry.size.width, geometry.size.height) * 0.64
             
-            ZStack {
+            VStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 8)
+                        .stroke(ringBackgroundColor, lineWidth: 8)
                     
+                    // Use system green for the progress ring to align with Apple HIG
                     Circle()
                         .trim(from: 0, to: progress / 100)
-                        .stroke(
-                            holdState == .detecting ? Color.gray : orangeColor,
-                            style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                        )
+                        .stroke(Color.green, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.3), value: progress)
+                        .shadow(color: Color.black.opacity(0.25), radius: 3, x: 0, y: 2)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: progress)
                     
                     VStack(spacing: 2) {
                         Text("REPS")
-                            .font(.system(size: 10))
-                            .foregroundColor(.gray)
+                            .font(.system(.caption2, design: .rounded))
+                            .fontWeight(.semibold)
+                            .foregroundColor(secondaryTextColor)
+                            .tracking(1)
                         Text("\(reps)")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(orangeColor)
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .foregroundColor(holdState == .holding ? progressColor : .white)
                     }
-                    .offset(y: -circleSize * 0.30)
-                    
-                    VStack(spacing: 6) {
-                        switch holdState {
-                        case .waiting:
-                            Image(systemName: "hand.raised")
-                                .font(.system(size: 28))
-                                .foregroundColor(.gray.opacity(0.6))
-                            Text("Raise Hand")
-                                .font(.system(size: 11))
-                                .foregroundColor(.gray)
-                            
-                        case .detecting:
-                            Text("\(detectSeconds)")
-                                .font(.system(size: 48, weight: .bold))
-                                .foregroundColor(.gray)
-                            Text("of 5s")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                            
-                        case .holding:
-                            Text("\(holdSeconds)")
-                                .font(.system(size: 48, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("of 10s")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Button(action: onEnd) {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(redColor)
-                                .frame(width: 40, height: 40)
-                                .background(redColor.opacity(0.15))
-                                .cornerRadius(20)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 20)
-                                        .stroke(redColor.opacity(0.3), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                    .offset(y: circleSize * 0.10)
                 }
                 .frame(width: circleSize, height: circleSize)
-                .offset(y: 8)
+                .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 2)
+                
+                Group {
+                    switch holdState {
+                    case .waiting:
+                        VStack(spacing: 6) {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: 22, weight: .medium))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundColor(progressColor)
+                            Text("Raise hand")
+                                .font(.system(.caption2, design: .rounded))
+                                .fontWeight(.medium)
+                                .foregroundColor(secondaryTextColor)
+                        }
+                    
+                    case .detecting:
+                        VStack(spacing: 4) {
+                            Text("\(detectSeconds)")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("seconds")
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundColor(secondaryTextColor)
+                        }
+                    
+                    case .holding:
+                        VStack(spacing: 4) {
+                            Text("\(holdSeconds)")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundColor(progressColor)
+                            Text("of 10s")
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundColor(secondaryTextColor)
+                        }
+                    }
+                }
+                
+                Spacer()
+                    .frame(height: 8)
+                Button(action: onEnd) {
+                    Text("End")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                }
+                .buttonStyle(BorderedProminentButtonStyle())
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
