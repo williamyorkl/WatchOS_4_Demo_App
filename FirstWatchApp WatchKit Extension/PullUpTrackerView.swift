@@ -365,8 +365,6 @@ struct PullUpTrackerView: View {
                 }
             }
         }
-        ._statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
         #if DEBUG
         .overlay(alignment: .bottom) {
             if viewModel.sessionState == .active {
@@ -395,6 +393,7 @@ struct PullUpTrackerView: View {
                 }
             }
         }
+        .persistentSystemOverlays(.hidden)
     }
 }
 
@@ -748,23 +747,22 @@ struct ActiveView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let isCompactScreen = geometry.size.width <= 176 || geometry.size.height <= 215
-            let canvasSide = min(geometry.size.width, geometry.size.height)
-            let ringDiameter = min(
-                geometry.size.width * (isCompactScreen ? 1.145 : 1.125),
-                geometry.size.height * (isCompactScreen ? 0.92 : 0.905)
-            ).clamped(to: isCompactScreen ? 186...198 : 232...244)
-            let ringStrokeWidth = (ringDiameter * 0.040).clamped(to: 7.8...10.4)
-            let repsValueSize = (ringDiameter * 0.164).clamped(to: 31...40)
-            let countdownSize = (ringDiameter * 0.304).clamped(to: 52...64)
-            let pauseButtonSize = (ringDiameter * 0.144).clamped(to: 28...33)
-            let pauseIconSize = (ringDiameter * 0.056).clamped(to: 10.5...13.5)
-            let topInset = ringDiameter * 0.126
-            let centerValueOffsetY = -ringDiameter * 0.006
-            let bottomInset = ringDiameter * 0.13
+            let screenWidth = geometry.size.width
+            let screenHeight = geometry.size.height
+
+            let strokeRatio: CGFloat = 0.038
+            let ringDiameter = (screenWidth - 2) / (1 + strokeRatio)
+            let ringStrokeWidth = max(ringDiameter * strokeRatio, 8.0)
+            let countdownSize = ringDiameter * 0.28
+            let repsValueSize = ringDiameter * 0.14
+            let phaseLabelSize = ringDiameter * 0.058
+            let waitingIconSize = ringDiameter * 0.13
+            let pauseButtonSize = ringDiameter * 0.13
+            let pauseIconSize = ringDiameter * 0.052
+            let topInset = ringDiameter * 0.11
+            let bottomInset = ringDiameter * 0.11
+            let centerValueOffsetY = -ringDiameter * 0.01
             let arcRotation = Angle.degrees(-68)
-            let phaseLabelSize = (ringDiameter * 0.062).clamped(to: 11...15)
-            let waitingIconSize = (ringDiameter * 0.14).clamped(to: 24...32)
             
             ZStack {
                 Circle()
@@ -883,19 +881,18 @@ struct ActiveView: View {
                 .padding(.bottom, bottomInset)
             }
             .frame(width: ringDiameter, height: ringDiameter)
-            .frame(width: canvasSide, height: canvasSide)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.oledBlack)
-            .ignoresSafeArea()
-            .onChange(of: holdState) { newState in
-                if newState == .holding {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        showStartFlash = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        withAnimation(.easeIn(duration: 0.2)) {
-                            showStartFlash = false
-                        }
+        }
+        .ignoresSafeArea()
+        .onChange(of: holdState) { newState in
+            if newState == .holding {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showStartFlash = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    withAnimation(.easeIn(duration: 0.2)) {
+                        showStartFlash = false
                     }
                 }
             }
@@ -1052,14 +1049,6 @@ struct StatCard: View {
 struct PullUpTrackerView_Previews: PreviewProvider {
     static var previews: some View {
         Group {
-            PullUpTrackerView()
-                .previewDisplayName("Idle 40mm")
-                .previewLayout(.fixed(width: 162, height: 197))
-            
-            PullUpTrackerView()
-                .previewDisplayName("Idle 45mm")
-                .previewLayout(.fixed(width: 198, height: 242))
-            
             ActiveView(
                 holdState: .waiting,
                 detectSeconds: 0,
@@ -1070,11 +1059,11 @@ struct PullUpTrackerView_Previews: PreviewProvider {
                 onEnd: {},
                 onDismissHint: {},
                 showHint: true,
-                reduceMotion: true
+                reduceMotion: false
             )
-            .previewDisplayName("Waiting 40mm")
-            .previewLayout(.fixed(width: 162, height: 197))
-            
+            .previewDisplayName("Waiting — SE 40mm")
+            .previewLayout(.fixed(width: 324, height: 394))
+
             ActiveView(
                 holdState: .detecting,
                 detectSeconds: 2,
@@ -1085,11 +1074,11 @@ struct PullUpTrackerView_Previews: PreviewProvider {
                 onEnd: {},
                 onDismissHint: {},
                 showHint: false,
-                reduceMotion: true
+                reduceMotion: false
             )
-            .previewDisplayName("Detecting 45mm")
-            .previewLayout(.fixed(width: 198, height: 242))
-            
+            .previewDisplayName("Detecting — SE 44mm")
+            .previewLayout(.fixed(width: 368, height: 448))
+
             ActiveView(
                 holdState: .holding,
                 detectSeconds: 3,
@@ -1100,10 +1089,10 @@ struct PullUpTrackerView_Previews: PreviewProvider {
                 onEnd: {},
                 onDismissHint: {},
                 showHint: false,
-                reduceMotion: true
+                reduceMotion: false
             )
-            .previewDisplayName("Holding 45mm")
-            .previewLayout(.fixed(width: 198, height: 242))
+            .previewDisplayName("Holding — SE 40mm")
+            .previewLayout(.fixed(width: 324, height: 394))
         }
     }
 }

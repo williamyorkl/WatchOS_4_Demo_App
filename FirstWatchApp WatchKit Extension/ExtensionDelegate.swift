@@ -6,7 +6,17 @@
 //  Copyright © 2018 org. All rights reserved.
 //
 
+import SwiftUI
 import WatchKit
+
+@main
+struct PullUpApp: App {
+    var body: some Scene {
+        WindowGroup {
+            PullUpTrackerView()
+        }
+    }
+}
 
 class ExtensionDelegate: NSObject, WKExtensionDelegate {
 
