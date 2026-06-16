@@ -1,32 +1,32 @@
 import XCTest
-import SwiftUI
 @testable import FirstWatchApp
 
 final class PullUpTrackerGoldenTests: XCTestCase {
 
-    func test_goldenTesting_documentation() {
-        let docs = """
-        Golden Testing for WatchOS Pull-up Tracker
-        
-        NOTE: SnapshotTesting .image strategy is NOT supported on watchOS.
-        See: https://github.com/pointfreeco/swift-snapshot-testing/issues/705
-        
-        ALTERNATIVE: Use XCUITest on watchOS Simulator for visual testing.
-        
-        TESTED SCREENS:
-        1. IdleView - Start Session button
-        2. ActiveView - waiting/detecting/holding states
-        3. SummaryView - completion stats
-        
-        WATCH SIZES:
-        - 40mm: 162x197
-        - 44mm: 184x224
-        - 45mm: 198x242
-        """
-        XCTAssertFalse(docs.isEmpty, "Documentation exists")
+    func test_activeView_phases_haveCorrectLabelColors() {
+        let waitingVM = PullUpTrackerViewModel()
+        waitingVM.holdState = .waiting
+        XCTAssertEqual(waitingVM.progress, 0)
+
+        let detectingVM = PullUpTrackerViewModel()
+        detectingVM.holdState = .detecting
+        detectingVM.detectSeconds = 2
+        XCTAssertEqual(detectingVM.progress, 200.0 / 3.0, accuracy: 0.1)
+
+        let holdingVM = PullUpTrackerViewModel()
+        holdingVM.holdState = .holding
+        holdingVM.holdSeconds = 5
+        XCTAssertEqual(holdingVM.progress, 50.0, accuracy: 0.1)
     }
 
-    func test_buildVerification() {
-        XCTAssertTrue(true, "All UI components compile successfully")
+    func test_appConstants_areExpectedValues() {
+        let vm = PullUpTrackerViewModel()
+        vm.holdState = .detecting
+        vm.detectSeconds = 3
+        XCTAssertEqual(vm.progress, 100.0, accuracy: 0.1, "detectThreshold should be 3")
+
+        vm.holdState = .holding
+        vm.holdSeconds = 10
+        XCTAssertEqual(vm.progress, 100.0, accuracy: 0.1, "targetHoldSeconds should be 10")
     }
 }

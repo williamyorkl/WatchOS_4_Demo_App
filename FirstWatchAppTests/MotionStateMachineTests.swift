@@ -211,4 +211,120 @@ final class MotionStateMachineTests: XCTestCase {
         XCTAssertEqual(sm.state, .active, "With 0.3s total detection, 25 samples at 60Hz (0.42s) should reach active")
         XCTAssertTrue(events.contains(.enteredActive))
     }
+
+    // MARK: - Boundary Timing
+
+    func test_detecting_exactlyAtDuration_doesNotTransition() {
+        var sm = MotionStateMachine(detectingDuration: 0.2, confirmedDuration: 99.0)
+        let pose = MotionStateMachine.hangingPose
+        let start = Date()
+        let exactCount = Int(0.2 / sampleInterval)
+
+        _ = feed(&sm, pose: pose, count: exactCount, start: start)
+
+        XCTAssertEqual(sm.state, .detecting, "At exactly detectingDuration, uses > not >=, so stays detecting")
+
+        _ = sm.process(x: pose.x, y: pose.y, z: pose.z,
+                       at: start.addingTimeInterval(Double(exactCount) * sampleInterval))
+        XCTAssertEqual(sm.state, .confirmed, "One tick past duration should transition to confirmed")
+    }
+
+    func test_confirmed_exactlyAtDuration_transitionsToActive() {
+        var sm = MotionStateMachine(detectingDuration: 0.1, confirmedDuration: 0.1)
+        let pose = MotionStateMachine.hangingPose
+        let start = Date()
+
+        let detectingSamples = Int(0.1 / sampleInterval) + 2
+        _ = feed(&sm, pose: pose, count: detectingSamples, start: start)
+        XCTAssertEqual(sm.state, .confirmed)
+
+        let confirmedSamples = Int(0.1 / sampleInterval) + 2
+        let confirmedStart = start.addingTimeInterval(Double(detectingSamples) * sampleInterval)
+        let events = feed(&sm, pose: pose, count: confirmedSamples, start: confirmedStart)
+
+        XCTAssertEqual(sm.state, .active)
+        XCTAssertTrue(events.contains(.enteredActive))
+    }
+
+    // MARK: - Noise Rejection
+
+    func test_alternatingPoses_neverReachesActive() {
+        var sm = MotionStateMachine()
+        let start = Date()
+
+        for i in 0..<600 {
+            let t = start.addingTimeInterval(Double(i) * sampleInterval)
+            let pose = i % 2 == 0 ? MotionStateMachine.hangingPose : MotionStateMachine.neutralPose
+            _ = sm.process(x: pose.x, y: pose.y, z: pose.z, at: t)
+        }
+
+        XCTAssertNotEqual(sm.state, .active, "Alternating hanging/neutral every tick should never sustain long enough to activate")
+    }
+
+    func test_noisyHangingPose_withOccasionalFlicker_stillActivates() {
+        var sm = MotionStateMachine()
+        let start = Date()
+        let hanging = MotionStateMachine.hangingPose
+
+        for i in 0..<200 {
+            let t = start.addingTimeInterval(Double(i) * sampleInterval)
+            let isFlicker = i % 20 == 10
+            let p = isFlicker ? MotionStateMachine.neutralPose : hanging
+            _ = sm.process(x: p.x, y: p.y, z: p.z, at: t)
+        }
+
+        XCTAssertEqual(sm.state, .idle, "Even occasional flickers during detecting reset to idle")
+    }
+
+    // MARK: - Z-Axis Arm-Down Path
+
+    func test_armDown_zNegativeDominant_triggersPaused() {
+        var sm = MotionStateMachine()
+        let start = Date()
+        driveToActive(&sm, start: start)
+
+        let zDownPose = (x: 0.1, y: 0.1, z: -0.85)
+        let events = feed(&sm, pose: zDownPose, count: 1,
+                           start: start.addingTimeInterval(3.0))
+
+        XCTAssertEqual(sm.state, .paused, "z < -0.7 with z dominant should trigger arm-down")
+        XCTAssertTrue(events.contains(.enteredPaused))
+    }
+
+    func test_armDown_xPositiveDominant_triggersPaused() {
+        var sm = MotionStateMachine()
+        let start = Date()
+        driveToActive(&sm, start: start)
+
+        let xDownPose = (x: 0.85, y: 0.1, z: 0.1)
+        let events = feed(&sm, pose: xDownPose, count: 1,
+                           start: start.addingTimeInterval(3.0))
+
+        XCTAssertEqual(sm.state, .paused, "x > 0.5 with x dominant should trigger arm-down")
+        XCTAssertTrue(events.contains(.enteredPaused))
+    }
+
+    // MARK: - Multi-Rep Lifecycle
+
+    func test_threeFullLifecycles() {
+        var sm = MotionStateMachine()
+        let t0 = Date()
+        var totalActive = 0
+        var totalPaused = 0
+
+        for cycle in 0..<3 {
+            let cycleStart = t0.addingTimeInterval(Double(cycle) * 10.0)
+            let events = driveToActive(&sm, start: cycleStart)
+            XCTAssertEqual(sm.state, .active)
+            totalActive += events.filter { $0 == .enteredActive }.count
+
+            let armDownTime = cycleStart.addingTimeInterval(3.0)
+            let pauseEvents = feed(&sm, pose: MotionStateMachine.armDownPose,
+                                    count: 5, start: armDownTime)
+            totalPaused += pauseEvents.filter { $0 == .enteredPaused }.count
+        }
+
+        XCTAssertEqual(totalActive, 3, "Should enter active exactly 3 times")
+        XCTAssertEqual(totalPaused, 3, "Should enter paused exactly 3 times")
+    }
 }

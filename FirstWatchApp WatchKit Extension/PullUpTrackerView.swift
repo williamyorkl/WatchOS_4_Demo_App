@@ -131,12 +131,12 @@ class PullUpTrackerViewModel: ObservableObject {
         RunLoop.current.add(countTimer!, forMode: .common)
     }
 
-    private func stopCountTimer() {
+    func stopCountTimer() {
         countTimer?.invalidate()
         countTimer = nil
     }
 
-    private func updateTimer() {
+    func updateTimer() {
         guard stateMachine.state == .active else { return }
 
         if holdState == .detecting {
@@ -192,7 +192,7 @@ class PullUpTrackerViewModel: ObservableObject {
         print("🔴 [PullUp] accelerometer updates started, interval: \(motionManager.accelerometerUpdateInterval)")
     }
 
-    private func processMotion(x: Double, y: Double, z: Double) {
+    func processMotion(x: Double, y: Double, z: Double, at timestamp: Date = Date()) {
         #if DEBUG
         debugCounter += 1
         if debugCounter % 30 == 0 {
@@ -204,7 +204,7 @@ class PullUpTrackerViewModel: ObservableObject {
         #endif
 
         let prevState = stateMachine.state
-        let events = stateMachine.process(x: x, y: y, z: z)
+        let events = stateMachine.process(x: x, y: y, z: z, at: timestamp)
 
         #if DEBUG
         if debugCounter % 60 == 0 {
