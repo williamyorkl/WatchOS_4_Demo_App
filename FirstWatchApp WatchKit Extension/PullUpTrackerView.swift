@@ -326,6 +326,9 @@ struct PullUpTrackerView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var contentOpacity: Double = 0
     @State private var contentScale: CGFloat = 0.95
+    #if DEBUG
+    @State private var showDebugOverlay = false
+    #endif
     
     var body: some View {
         ZStack {
@@ -367,7 +370,7 @@ struct PullUpTrackerView: View {
         }
         #if DEBUG
         .overlay(alignment: .bottom) {
-            if viewModel.sessionState == .active {
+            if viewModel.sessionState == .active && showDebugOverlay {
                 VStack(spacing: 1) {
                     Text(String(format: "X:%.2f Y:%.2f Z:%.2f",
                                 viewModel.debugX, viewModel.debugY, viewModel.debugZ))
@@ -379,6 +382,11 @@ struct PullUpTrackerView: View {
                 .background(Color.black.opacity(0.8))
                 .cornerRadius(4)
                 .padding(.bottom, 2)
+            }
+        }
+        .onLongPressGesture(minimumDuration: 2.0) {
+            if viewModel.sessionState == .active {
+                showDebugOverlay.toggle()
             }
         }
         #endif
@@ -394,169 +402,6 @@ struct PullUpTrackerView: View {
             }
         }
         .persistentSystemOverlays(.hidden)
-    }
-}
-
-// MARK: - Start Hint Overlay
-struct StartHintOverlay: View {
-    let metrics: WatchLayoutMetrics
-    let onTap: () -> Void
-    let reduceMotion: Bool
-    @State private var bounceOffset: CGFloat = 0
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: metrics.tightSpacing) {
-                ZStack {
-                    Image(systemName: "hand.raised.fill")
-                        .font(.system(size: metrics.hintIconSize, weight: .semibold))
-                        .foregroundColor(.neonBlue)
-                    
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: metrics.hintIconSize * 0.72, weight: .heavy))
-                        .foregroundColor(.neonBlue)
-                        .offset(x: metrics.hintIconSize * 0.8, y: -metrics.hintIconSize * 0.5)
-                }
-                .offset(y: bounceOffset)
-                
-                Text("抬腕开始")
-                    .font(.system(size: metrics.hintTextSize, weight: .bold, design: .rounded))
-                    .tracking(0.5)
-                    .foregroundColor(.neonBlue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: metrics.hintHeight)
-            .padding(.horizontal, metrics.horizontalPadding)
-            .background(
-                Capsule()
-                    .fill(Color.neonBlue.opacity(0.15))
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.neonBlue.opacity(0.3), lineWidth: 1)
-                    )
-            )
-            .shadow(color: Color.neonBlue.opacity(0.18), radius: 6, x: 0, y: 3)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                bounceOffset = -4
-            }
-        }
-    }
-}
-
-// MARK: - Progress Ring Component
-struct ProgressRing: View {
-    let progress: Double
-    let diameter: CGFloat
-    let strokeWidth: CGFloat
-    
-    private var progressGradient: AngularGradient {
-        let p = progress / 100.0
-        if p < 0.4 {
-            return AngularGradient(
-                gradient: Gradient(colors: [.successGreen, .successGreen]),
-                center: .center,
-                startAngle: .degrees(-90),
-                endAngle: .degrees(-90 + 360 * p)
-            )
-        } else if p < 0.8 {
-            return AngularGradient(
-                gradient: Gradient(colors: [.successGreen, .energyOrange]),
-                center: .center,
-                startAngle: .degrees(-90),
-                endAngle: .degrees(-90 + 360 * p)
-            )
-        } else {
-            return AngularGradient(
-                gradient: Gradient(colors: [.successGreen, .energyOrange, .dangerRed]),
-                center: .center,
-                startAngle: .degrees(-90),
-                endAngle: .degrees(-90 + 360 * p)
-            )
-        }
-    }
-    
-    private var glowColor: Color {
-        let p = progress
-        if p < 40 { return .successGreen }
-        else if p < 80 { return .energyOrange }
-        else { return .dangerRed }
-    }
-    
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.cardBackgroundAlt, lineWidth: strokeWidth)
-                .frame(width: diameter, height: diameter)
-            
-            if progress > 0 {
-                Circle()
-                    .trim(from: 0, to: min(progress / 100, 1.0))
-                    .stroke(
-                        progressGradient,
-                        style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: diameter, height: diameter)
-                    .shadow(color: glowColor.opacity(0.3), radius: 6, x: 0, y: 0)
-            }
-        }
-    }
-}
-
-// MARK: - State Badge Component
-struct StateBadge: View {
-    let holdState: TrackerHoldState
-    let progress: Double
-    let reduceMotion: Bool
-    let size: CGFloat
-    let iconSize: CGFloat
-    @State private var pulseScale: CGFloat = 1.0
-    
-    private var badgeColor: Color {
-        switch holdState {
-        case .waiting: return .neonBlue
-        case .detecting: return .energyOrange
-        case .holding:
-            let p = progress
-            if p < 40 { return .successGreen }
-            else if p < 80 { return .energyOrange }
-            else { return .dangerRed }
-        }
-    }
-    
-    private var iconName: String {
-        switch holdState {
-        case .waiting: return "hand.raised.fill"
-        case .detecting: return "arrow.triangle.2.circlepath"
-        case .holding: return "lock.fill"
-        }
-    }
-    
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(badgeColor.opacity(0.2))
-                .frame(width: size, height: size)
-            
-            Image(systemName: iconName)
-                .font(.system(size: iconSize, weight: .semibold))
-                .foregroundColor(badgeColor)
-                .scaleEffect(holdState == .waiting ? pulseScale : 1.0)
-                .rotationEffect(.degrees(holdState == .detecting && !reduceMotion ? 360 : 0))
-                .animation(holdState == .detecting && !reduceMotion ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: holdState)
-        }
-        .onAppear {
-            guard holdState == .waiting, !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                pulseScale = 1.1
-            }
-        }
     }
 }
 
@@ -581,7 +426,7 @@ struct IdleView: View {
                         .scaleEffect(iconScale)
                         .onAppear {
                             guard !reduceMotion else { return }
-                            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                                 iconScale = 1.1
                             }
                         }
@@ -686,65 +531,31 @@ struct ActiveView: View {
     private var primaryValueColor: Color {
         Color.white.opacity(0.96)
     }
-    
-    private var secondaryTextColor: Color {
-        Color(red: 0.32, green: 0.38, blue: 0.50)
-    }
-    
+
     private var endButtonBorderColor: Color {
         Color(red: 0.58, green: 0.08, blue: 0.11)
     }
-    
+
     private var endButtonFillColor: Color {
         Color(red: 0.20, green: 0.03, blue: 0.04)
     }
-    
-    private var currentGoalSeconds: Int {
-        holdState == .holding ? 10 : 3
-    }
-    
-    private var displayedPrimaryValue: Int {
-        switch holdState {
-        case .waiting:
-            return 0
-        case .detecting:
-            return detectSeconds
-        case .holding:
-            return holdSeconds
-        }
-    }
-    
+
     private var ringProgress: Double {
         guard holdState != .waiting else { return 0.0 }
         return min(progress / 100.0, 1.0)
     }
-    
-    private var helperText: String {
+
+    private var phaseLabelText: LocalizedStringKey {
         switch holdState {
         case .waiting:
-            return "of 3s"
+            return "Detecting"
         case .detecting:
-            return "of 3s"
+            return "Hold Steady"
         case .holding:
-            return "of 10s"
+            return "Keep Going!"
         }
     }
 
-    private var phaseLabelText: String {
-        switch holdState {
-        case .waiting:
-            return "检测中"
-        case .detecting:
-            return "保持稳定"
-        case .holding:
-            return "坚持！"
-        }
-    }
-    
-    private var statusText: String {
-        "REPS"
-    }
-    
     var body: some View {
         GeometryReader { geometry in
             let screenWidth = geometry.size.width
@@ -845,11 +656,14 @@ struct ActiveView: View {
                 .offset(y: centerValueOffsetY)
 
                 if showStartFlash {
-                    Text("开始！")
-                        .font(.system(size: countdownSize * 0.48, weight: .black, design: .rounded))
-                        .foregroundColor(.successGreen)
-                        .transition(.scale.combined(with: .opacity))
-                        .zIndex(1)
+                    Circle()
+                        .trim(from: 0, to: ringProgress)
+                        .stroke(ringProgressColor, style: StrokeStyle(lineWidth: ringStrokeWidth, lineCap: .round))
+                        .rotationEffect(arcRotation)
+                        .frame(width: ringDiameter, height: ringDiameter)
+                        .shadow(color: ringProgressColor.opacity(0.6), radius: 18)
+                        .blur(radius: 2)
+                        .transition(.opacity)
                 }
             }
             .overlay(alignment: .top) {
@@ -890,7 +704,7 @@ struct ActiveView: View {
                 withAnimation(.easeOut(duration: 0.2)) {
                     showStartFlash = true
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     withAnimation(.easeIn(duration: 0.2)) {
                         showStartFlash = false
                     }
