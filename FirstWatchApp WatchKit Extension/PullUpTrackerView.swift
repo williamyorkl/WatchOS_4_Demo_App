@@ -35,7 +35,7 @@ class PullUpTrackerViewModel: ObservableObject {
     private var debugCounter = 0
     #endif
 
-    private let detectThreshold = 5
+    private let detectThreshold = 3
     private let targetHoldSeconds = 10
 
     private let motionManager = CMMotionManager()
@@ -86,6 +86,7 @@ class PullUpTrackerViewModel: ObservableObject {
     }
 
     func startSession() {
+        guard sessionState != .active else { return }
         sessionState = .active
         reps = 0
         totalHoldTime = 0
@@ -123,6 +124,7 @@ class PullUpTrackerViewModel: ObservableObject {
     }
 
     private func startCountTimer() {
+        countTimer?.invalidate()
         countTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateTimer()
         }
@@ -163,6 +165,7 @@ class PullUpTrackerViewModel: ObservableObject {
     }
 
     private func startAccelerometers() {
+        motionManager.stopAccelerometerUpdates()
         let isAvailable = motionManager.isAccelerometerAvailable
         print("🔴 [PullUp] startAccelerometers — isAccelerometerAvailable: \(isAvailable)")
 
@@ -640,7 +643,11 @@ struct ActiveView: View {
     let onDismissHint: () -> Void
     let showHint: Bool
     let reduceMotion: Bool
-    
+
+    @State private var showStartFlash = false
+    @State private var waitingPulse: CGFloat = 1.0
+    @State private var waitingRingRotation: Double = 0
+
     private var repsColor: Color {
         .energyOrange
     }
@@ -650,7 +657,31 @@ struct ActiveView: View {
     }
     
     private var ringProgressColor: Color {
-        holdState == .waiting ? Color.white.opacity(0.16) : .energyOrange
+        switch holdState {
+        case .waiting:
+            return .neonBlue
+        case .detecting:
+            return .energyOrange
+        case .holding:
+            let p = progress
+            if p < 40 { return .successGreen }
+            else if p < 80 { return .energyOrange }
+            else { return .dangerRed }
+        }
+    }
+
+    private var phaseLabelColor: Color {
+        switch holdState {
+        case .waiting:
+            return .neonBlue.opacity(0.7)
+        case .detecting:
+            return .energyOrange.opacity(0.85)
+        case .holding:
+            let p = progress
+            if p < 40 { return .successGreen }
+            else if p < 80 { return .energyOrange }
+            else { return .dangerRed }
+        }
     }
     
     private var primaryValueColor: Color {
@@ -670,7 +701,7 @@ struct ActiveView: View {
     }
     
     private var currentGoalSeconds: Int {
-        holdState == .holding ? 10 : 5
+        holdState == .holding ? 10 : 3
     }
     
     private var displayedPrimaryValue: Int {
@@ -692,11 +723,22 @@ struct ActiveView: View {
     private var helperText: String {
         switch holdState {
         case .waiting:
-            return "of 5s"
+            return "of 3s"
         case .detecting:
-            return "of 5s"
+            return "of 3s"
         case .holding:
             return "of 10s"
+        }
+    }
+
+    private var phaseLabelText: String {
+        switch holdState {
+        case .waiting:
+            return "检测中"
+        case .detecting:
+            return "保持稳定"
+        case .holding:
+            return "坚持！"
         }
     }
     
@@ -721,30 +763,96 @@ struct ActiveView: View {
             let centerValueOffsetY = -ringDiameter * 0.006
             let bottomInset = ringDiameter * 0.13
             let arcRotation = Angle.degrees(-68)
+            let phaseLabelSize = (ringDiameter * 0.062).clamped(to: 11...15)
+            let waitingIconSize = (ringDiameter * 0.14).clamped(to: 24...32)
             
             ZStack {
                 Circle()
                     .stroke(ringTrackColor, lineWidth: ringStrokeWidth)
                     .frame(width: ringDiameter, height: ringDiameter)
-                
-                Circle()
-                    .trim(from: 0, to: ringProgress)
-                    .stroke(
-                        ringProgressColor,
-                        style: StrokeStyle(lineWidth: ringStrokeWidth, lineCap: .round)
-                    )
-                    .rotationEffect(arcRotation)
-                    .frame(width: ringDiameter, height: ringDiameter)
-                    .opacity(holdState == .waiting ? 0.22 : 1.0)
-                    .shadow(color: ringProgressColor.opacity(holdState == .waiting ? 0.0 : 0.22), radius: 6, x: 0, y: 0)
 
-                Text("\(displayedPrimaryValue)")
-                    .font(.system(size: countdownSize, weight: .heavy, design: .rounded))
-                    .foregroundColor(primaryValueColor)
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.72)
-                    .lineLimit(1)
-                    .offset(y: centerValueOffsetY)
+                if holdState == .waiting {
+                    Circle()
+                        .stroke(
+                            Color.neonBlue.opacity(0.35),
+                            style: StrokeStyle(
+                                lineWidth: ringStrokeWidth,
+                                dash: [ringDiameter * 0.08, ringDiameter * 0.05]
+                            )
+                        )
+                        .frame(width: ringDiameter, height: ringDiameter)
+                        .rotationEffect(.degrees(waitingRingRotation))
+                        .onAppear {
+                            guard !reduceMotion else { return }
+                            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                                waitingRingRotation = 360
+                            }
+                        }
+                } else {
+                    Circle()
+                        .trim(from: 0, to: ringProgress)
+                        .stroke(
+                            ringProgressColor,
+                            style: StrokeStyle(lineWidth: ringStrokeWidth, lineCap: .round)
+                        )
+                        .rotationEffect(arcRotation)
+                        .frame(width: ringDiameter, height: ringDiameter)
+                        .shadow(color: ringProgressColor.opacity(0.22), radius: 6, x: 0, y: 0)
+                }
+
+                Group {
+                    switch holdState {
+                    case .waiting:
+                        VStack(spacing: ringDiameter * 0.028) {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: waitingIconSize, weight: .semibold))
+                                .foregroundColor(.neonBlue)
+                                .scaleEffect(waitingPulse)
+                            Text(phaseLabelText)
+                                .font(.system(size: phaseLabelSize, weight: .bold, design: .rounded))
+                                .foregroundColor(phaseLabelColor)
+                        }
+                        .onAppear {
+                            guard !reduceMotion else { return }
+                            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                                waitingPulse = 1.15
+                            }
+                        }
+                    case .detecting:
+                        VStack(spacing: ringDiameter * 0.022) {
+                            Text("\(detectSeconds)")
+                                .font(.system(size: countdownSize, weight: .heavy, design: .rounded))
+                                .foregroundColor(primaryValueColor)
+                                .monospacedDigit()
+                                .minimumScaleFactor(0.72)
+                                .lineLimit(1)
+                            Text(phaseLabelText)
+                                .font(.system(size: phaseLabelSize, weight: .medium, design: .rounded))
+                                .foregroundColor(phaseLabelColor)
+                        }
+                    case .holding:
+                        VStack(spacing: ringDiameter * 0.022) {
+                            Text("\(holdSeconds)")
+                                .font(.system(size: countdownSize, weight: .heavy, design: .rounded))
+                                .foregroundColor(primaryValueColor)
+                                .monospacedDigit()
+                                .minimumScaleFactor(0.72)
+                                .lineLimit(1)
+                            Text(phaseLabelText)
+                                .font(.system(size: phaseLabelSize, weight: .medium, design: .rounded))
+                                .foregroundColor(phaseLabelColor)
+                        }
+                    }
+                }
+                .offset(y: centerValueOffsetY)
+
+                if showStartFlash {
+                    Text("开始！")
+                        .font(.system(size: countdownSize * 0.48, weight: .black, design: .rounded))
+                        .foregroundColor(.successGreen)
+                        .transition(.scale.combined(with: .opacity))
+                        .zIndex(1)
+                }
             }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
@@ -779,6 +887,18 @@ struct ActiveView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.oledBlack)
             .ignoresSafeArea()
+            .onChange(of: holdState) { newState in
+                if newState == .holding {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showStartFlash = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        withAnimation(.easeIn(duration: 0.2)) {
+                            showStartFlash = false
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -956,8 +1076,23 @@ struct PullUpTrackerView_Previews: PreviewProvider {
             .previewLayout(.fixed(width: 162, height: 197))
             
             ActiveView(
+                holdState: .detecting,
+                detectSeconds: 2,
+                holdSeconds: 0,
+                reps: 1,
+                progress: 66,
+                totalHoldTime: 12,
+                onEnd: {},
+                onDismissHint: {},
+                showHint: false,
+                reduceMotion: true
+            )
+            .previewDisplayName("Detecting 45mm")
+            .previewLayout(.fixed(width: 198, height: 242))
+            
+            ActiveView(
                 holdState: .holding,
-                detectSeconds: 5,
+                detectSeconds: 3,
                 holdSeconds: 7,
                 reps: 4,
                 progress: 72,
