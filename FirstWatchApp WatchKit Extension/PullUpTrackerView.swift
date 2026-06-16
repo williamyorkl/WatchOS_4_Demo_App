@@ -16,42 +16,38 @@ enum TrackerHoldState {
     case holding
 }
 
-enum TrackerMotionState {
-    case idle
-    case detecting
-    case confirmed
-    case active
-    case paused
-}
-
 class PullUpTrackerViewModel: ObservableObject {
     @Published var sessionState: TrackerSessionState = .idle
     @Published var holdState: TrackerHoldState = .waiting
-    
+
     @Published var detectSeconds: Int = 0
     @Published var holdSeconds: Int = 0
     @Published var totalHoldTime: Int = 0
     @Published var reps: Int = 0
-    
+    @Published var showHint: Bool = true
+
+    #if DEBUG
+    @Published var debugX: Double = 0
+    @Published var debugY: Double = 0
+    @Published var debugZ: Double = 0
+    @Published var debugState: String = "idle"
+    @Published var debugAccelStatus: String = "not started"
+    private var debugCounter = 0
+    #endif
+
     private let detectThreshold = 5
     private let targetHoldSeconds = 10
-    
+
     private let motionManager = CMMotionManager()
-    private var motionState: TrackerMotionState = .idle
-    private var stateStartTime: Date?
-    private var slidingWindow: [Double] = []
-    private let windowSize = 10
-    private let baselineMagnitude: Double = 1.0
-    private let magnitudeThreshold: Double = 0.3
-    private let detectingDuration: Double = 1.5
-    private let confirmedDuration: Double = 0.5
-    
+    private var stateMachine = MotionStateMachine()
+
     private var countTimer: Timer?
-    private var lastUpdateTime: Date?
-    
+
     private let healthStore = HKHealthStore()
     private var workoutSession: HKWorkoutSession?
-    
+
+    var playHaptic: (WKHapticType) -> Void = { WKInterfaceDevice.current().play($0) }
+
     var progress: Double {
         if holdState == .detecting {
             return Double(detectSeconds) / Double(detectThreshold) * 100
@@ -60,50 +56,35 @@ class PullUpTrackerViewModel: ObservableObject {
         }
         return 0
     }
-    
+
     private func startWorkoutSession() {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            print("❌ HealthKit 不可用")
-            return
-        }
-        
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
         let typesToShare: Set = [HKObjectType.workoutType()]
-        healthStore.requestAuthorization(toShare: typesToShare, read: nil) { success, error in
+        healthStore.requestAuthorization(toShare: typesToShare, read: nil) { success, _ in
             DispatchQueue.main.async {
-                if success {
-                    print("✅ HealthKit 权限已获取")
-                    self.beginWorkoutSession()
-                } else {
-                    print("❌ HealthKit 权限被拒绝: \(error?.localizedDescription ?? "未知错误")")
-                }
+                if success { self.beginWorkoutSession() }
             }
         }
     }
-    
+
     private func beginWorkoutSession() {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
-        
+
         do {
             workoutSession = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             workoutSession?.startActivity(with: Date())
-            print("✅ Workout Session 已启动 - 后台运行已启用")
-        } catch {
-            print("❌ 启动 Workout Session 失败: \(error)")
-        }
+        } catch { }
     }
-    
+
     private func stopWorkoutSession() {
-        guard let session = workoutSession else {
-            print("⏹️ Workout Session 不存在，跳过停止")
-            return
-        }
+        guard let session = workoutSession else { return }
         session.end()
         workoutSession = nil
-        print("⏹️ Workout Session 已停止")
     }
-    
+
     func startSession() {
         sessionState = .active
         reps = 0
@@ -111,14 +92,15 @@ class PullUpTrackerViewModel: ObservableObject {
         detectSeconds = 0
         holdSeconds = 0
         holdState = .waiting
-        motionState = .idle
-        slidingWindow.removeAll()
-        
+        stateMachine.reset()
+        showHint = true
+
+        print("🔴 [PullUp] startSession called")
         startWorkoutSession()
         startAccelerometers()
         startCountTimer()
     }
-    
+
     func endSession() {
         sessionState = .summary
         holdState = .waiting
@@ -126,29 +108,35 @@ class PullUpTrackerViewModel: ObservableObject {
         stopCountTimer()
         stopWorkoutSession()
     }
-    
+
     func backToIdle() {
         sessionState = .idle
         reps = 0
         totalHoldTime = 0
+        motionManager.stopAccelerometerUpdates()
+        stopCountTimer()
         stopWorkoutSession()
     }
-    
+
+    func dismissHint() {
+        showHint = false
+    }
+
     private func startCountTimer() {
         countTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateTimer()
         }
-        RunLoop.current.add(countTimer!, forMode: .commonModes)
+        RunLoop.current.add(countTimer!, forMode: .common)
     }
-    
+
     private func stopCountTimer() {
         countTimer?.invalidate()
         countTimer = nil
     }
-    
+
     private func updateTimer() {
-        guard motionState == .active else { return }
-        
+        guard stateMachine.state == .active else { return }
+
         if holdState == .detecting {
             detectSeconds += 1
             if detectSeconds >= detectThreshold {
@@ -158,290 +146,652 @@ class PullUpTrackerViewModel: ObservableObject {
         } else if holdState == .holding {
             holdSeconds += 1
             totalHoldTime += 1
-            
+
             if holdSeconds >= targetHoldSeconds {
                 reps += 1
                 holdSeconds = 0
-                WKInterfaceDevice.current().play(.success)
+                celebrateRep()
             }
         }
     }
-    
+
+    private func celebrateRep() {
+        playHaptic(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.playHaptic(.click)
+        }
+    }
+
     private func startAccelerometers() {
-        guard motionManager.isAccelerometerAvailable else { return }
-        
+        let isAvailable = motionManager.isAccelerometerAvailable
+        print("🔴 [PullUp] startAccelerometers — isAccelerometerAvailable: \(isAvailable)")
+
+        guard isAvailable else {
+            #if DEBUG
+            debugAccelStatus = "UNAVAILABLE"
+            #endif
+            return
+        }
+        #if DEBUG
+        debugAccelStatus = "started"
+        #endif
+
         motionManager.accelerometerUpdateInterval = 1.0 / 60.0
-        motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, error in
-            guard let data = data, let self = self else { return }
-            
-            let x = data.acceleration.x
-            let y = data.acceleration.y
-            let z = data.acceleration.z
-            
-            self.processMotion(x: x, y: y, z: z)
+        motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+            guard let data = data, let self = self else {
+                print("🔴 [PullUp] accel callback: data=nil or self=nil")
+                return
+            }
+            self.processMotion(x: data.acceleration.x,
+                               y: data.acceleration.y,
+                               z: data.acceleration.z)
         }
+        print("🔴 [PullUp] accelerometer updates started, interval: \(motionManager.accelerometerUpdateInterval)")
     }
-    
+
     private func processMotion(x: Double, y: Double, z: Double) {
-        let magnitude = sqrt(x * x + y * y + z * z)
-        
-        slidingWindow.append(magnitude)
-        if slidingWindow.count > windowSize {
-            slidingWindow.removeFirst()
+        #if DEBUG
+        debugCounter += 1
+        if debugCounter % 30 == 0 {
+            debugX = x
+            debugY = y
+            debugZ = z
+            debugState = String(describing: stateMachine.state)
         }
-        
-        let avgMagnitude = slidingWindow.reduce(0, +) / Double(slidingWindow.count)
-        let magnitudeStable = abs(avgMagnitude - baselineMagnitude) < magnitudeThreshold
-        let xDominant = abs(x) > abs(y) && abs(x) > abs(z)
-        let isHangingPose = magnitudeStable && xDominant && x < -0.7
-        
-        switch motionState {
-        case .idle:
-            if isHangingPose {
-                motionState = .detecting
-                stateStartTime = Date()
-            }
-            
-        case .detecting:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    let duration = Date().timeIntervalSince(startTime)
-                    if duration > detectingDuration {
-                        motionState = .confirmed
-                        stateStartTime = Date()
-                    }
-                }
-            } else {
-                motionState = .idle
-                stateStartTime = nil
-            }
-            
-        case .confirmed:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    let duration = Date().timeIntervalSince(startTime)
-                    if duration > confirmedDuration {
-                        motionState = .active
-                        holdState = .detecting
-                        detectSeconds = 0
-                        WKInterfaceDevice.current().play(.start)
-                    }
-                }
-            } else {
-                motionState = .idle
-                stateStartTime = nil
-            }
-            
-        case .active:
-            let isArmDown = checkArmDown(x: x, y: y, z: z)
-            if isArmDown {
-                motionState = .paused
-                stateStartTime = Date()
+        #endif
+
+        let prevState = stateMachine.state
+        let events = stateMachine.process(x: x, y: y, z: z)
+
+        #if DEBUG
+        if debugCounter % 60 == 0 {
+            let mag = (x * x + y * y + z * z).squareRoot()
+            print("🔴 [PullUp] X:\(String(format: "%.2f", x)) Y:\(String(format: "%.2f", y)) Z:\(String(format: "%.2f", z)) |mag|:\(String(format: "%.2f", mag)) state:\(prevState)")
+        }
+        #endif
+
+        for event in events {
+            print("🔴 [PullUp] EVENT: \(event)")
+            switch event {
+            case .enteredActive:
+                holdState = .detecting
+                detectSeconds = 0
+                playHaptic(.start)
+            case .enteredPaused:
                 holdState = .waiting
-                WKInterfaceDevice.current().play(.stop)
-            }
-            
-        case .paused:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    let duration = Date().timeIntervalSince(startTime)
-                    if duration > 0.5 {
-                        motionState = .active
-                        stateStartTime = nil
-                        holdState = .detecting
-                        WKInterfaceDevice.current().play(.start)
-                    }
-                }
-            } else {
-                motionState = .idle
-                stateStartTime = nil
+                playHaptic(.stop)
+            case .resumedActive:
+                holdState = .detecting
+                detectSeconds = 0
+                playHaptic(.start)
             }
         }
-    }
-    
-    private func checkArmDown(x: Double, y: Double, z: Double) -> Bool {
-        let xPositiveDominant = x > 0.5 && abs(x) > abs(y) && abs(x) > abs(z)
-        let zNegativeDominant = z < -0.7 && abs(z) > abs(x) && abs(z) > abs(y)
-        return xPositiveDominant || zNegativeDominant
     }
 }
 
+// MARK: - Color System
+extension Color {
+    static let oledBlack = Color(red: 0.04, green: 0.04, blue: 0.04)
+    static let successGreen = Color(red: 0.133, green: 0.773, blue: 0.369)
+    static let energyOrange = Color(red: 0.976, green: 0.451, blue: 0.086)
+    static let neonBlue = Color(red: 0.0, green: 0.8, blue: 1.0)
+    static let dangerRed = Color(red: 0.937, green: 0.267, blue: 0.267)
+    static let cardBackground = Color(red: 0.102, green: 0.102, blue: 0.102)
+    static let cardBackgroundAlt = Color(red: 0.110, green: 0.110, blue: 0.118)
+    static let subtleBorder = Color.white.opacity(0.05)
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+struct WatchLayoutMetrics {
+    let size: CGSize
+    let isCompact: Bool
+    let horizontalPadding: CGFloat
+    let sectionSpacing: CGFloat
+    let tightSpacing: CGFloat
+    let ringMinDiameter: CGFloat
+    let ringMaxDiameter: CGFloat
+    let badgeSize: CGFloat
+    let badgeIconSize: CGFloat
+    let repsLabelSize: CGFloat
+    let repsValueSize: CGFloat
+    let hintHeight: CGFloat
+    let hintTextSize: CGFloat
+    let hintIconSize: CGFloat
+    let idleIconSize: CGFloat
+    let titleSize: CGFloat
+    let subtitleSize: CGFloat
+    let stateCardHeight: CGFloat
+    let stateIconSize: CGFloat
+    let stateTitleSize: CGFloat
+    let stateSubtitleSize: CGFloat
+    let stateMetricSize: CGFloat
+    let stateProgressWidth: CGFloat
+    let buttonHeight: CGFloat
+    let buttonFontSize: CGFloat
+    let cardCornerRadius: CGFloat
+    let statIconSize: CGFloat
+    let statValueSize: CGFloat
+    let statLabelSize: CGFloat
+    let statCardVerticalPadding: CGFloat
+    
+    init(size: CGSize) {
+        self.size = size
+        
+        let compactHeight = size.height <= 215
+        let compactWidth = size.width <= 176
+        isCompact = compactHeight || compactWidth
+        
+        horizontalPadding = (size.width * 0.065).clamped(to: 10...16)
+        sectionSpacing = isCompact ? 8 : 10
+        tightSpacing = isCompact ? 4 : 6
+        ringMinDiameter = isCompact ? 76 : 88
+        ringMaxDiameter = isCompact ? 118 : 138
+        badgeSize = isCompact ? 32 : 38
+        badgeIconSize = isCompact ? 14 : 17
+        repsLabelSize = isCompact ? 10 : 11
+        repsValueSize = isCompact ? 42 : 50
+        hintHeight = isCompact ? 34 : 38
+        hintTextSize = isCompact ? 9 : 10
+        hintIconSize = isCompact ? 14 : 16
+        idleIconSize = isCompact ? 42 : 52
+        titleSize = isCompact ? 17 : 19
+        subtitleSize = isCompact ? 10 : 12
+        stateCardHeight = isCompact ? 44 : 50
+        stateIconSize = isCompact ? 12 : 14
+        stateTitleSize = isCompact ? 10 : 11
+        stateSubtitleSize = isCompact ? 8 : 9
+        stateMetricSize = isCompact ? 11 : 12
+        stateProgressWidth = isCompact ? 54 : 64
+        buttonHeight = isCompact ? 30 : 34
+        buttonFontSize = isCompact ? 10 : 11
+        cardCornerRadius = isCompact ? 12 : 14
+        statIconSize = isCompact ? 12 : 14
+        statValueSize = isCompact ? 18 : 22
+        statLabelSize = isCompact ? 7 : 8
+        statCardVerticalPadding = isCompact ? 8 : 10
+    }
+}
+
+// MARK: - Main View
 struct PullUpTrackerView: View {
     @StateObject private var viewModel = PullUpTrackerViewModel()
-    
-    let orangeColor = Color(red: 1.0, green: 0.549, blue: 0.0)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contentOpacity: Double = 0
+    @State private var contentScale: CGFloat = 0.95
     
     var body: some View {
-        Group {
-            switch viewModel.sessionState {
-            case .idle:
-                IdleView(onStart: viewModel.startSession)
-            case .active:
-                ActiveView(
-                    holdState: viewModel.holdState,
-                    detectSeconds: viewModel.detectSeconds,
-                    holdSeconds: viewModel.holdSeconds,
-                    reps: viewModel.reps,
-                    progress: viewModel.progress,
-                    onEnd: viewModel.endSession,
-                    orangeColor: orangeColor
-                )
-            case .summary:
-                SummaryView(
-                    reps: viewModel.reps,
-                    totalHoldTime: viewModel.totalHoldTime,
-                    onDone: viewModel.backToIdle,
-                    orangeColor: orangeColor
-                )
+        ZStack {
+            Color.oledBlack
+                .ignoresSafeArea()
+
+            Group {
+                switch viewModel.sessionState {
+                case .idle:
+                    IdleView(onStart: viewModel.startSession, reduceMotion: reduceMotion)
+                        .opacity(contentOpacity)
+                        .scaleEffect(contentScale)
+                case .active:
+                    ActiveView(
+                        holdState: viewModel.holdState,
+                        detectSeconds: viewModel.detectSeconds,
+                        holdSeconds: viewModel.holdSeconds,
+                        reps: viewModel.reps,
+                        progress: viewModel.progress,
+                        totalHoldTime: viewModel.totalHoldTime,
+                        onEnd: viewModel.endSession,
+                        onDismissHint: viewModel.dismissHint,
+                        showHint: viewModel.showHint,
+                        reduceMotion: reduceMotion
+                    )
+                    .opacity(contentOpacity)
+                    .scaleEffect(contentScale)
+                case .summary:
+                    SummaryView(
+                        reps: viewModel.reps,
+                        totalHoldTime: viewModel.totalHoldTime,
+                        onDone: viewModel.backToIdle,
+                        reduceMotion: reduceMotion
+                    )
+                    .opacity(contentOpacity)
+                    .scaleEffect(contentScale)
+                }
             }
         }
-        .background(Color.black)
-        .ignoresSafeArea()
+        ._statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
+        #if DEBUG
+        .overlay(alignment: .bottom) {
+            if viewModel.sessionState == .active {
+                VStack(spacing: 1) {
+                    Text(String(format: "X:%.2f Y:%.2f Z:%.2f",
+                                viewModel.debugX, viewModel.debugY, viewModel.debugZ))
+                    Text("\(viewModel.debugState) | \(viewModel.debugAccelStatus)")
+                }
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.green)
+                .padding(3)
+                .background(Color.black.opacity(0.8))
+                .cornerRadius(4)
+                .padding(.bottom, 2)
+            }
+        }
+        #endif
+        .onAppear {
+            if reduceMotion {
+                contentOpacity = 1.0
+                contentScale = 1.0
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    contentOpacity = 1.0
+                    contentScale = 1.0
+                }
+            }
+        }
     }
 }
 
+// MARK: - Start Hint Overlay
+struct StartHintOverlay: View {
+    let metrics: WatchLayoutMetrics
+    let onTap: () -> Void
+    let reduceMotion: Bool
+    @State private var bounceOffset: CGFloat = 0
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: metrics.tightSpacing) {
+                ZStack {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: metrics.hintIconSize, weight: .semibold))
+                        .foregroundColor(.neonBlue)
+                    
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: metrics.hintIconSize * 0.72, weight: .heavy))
+                        .foregroundColor(.neonBlue)
+                        .offset(x: metrics.hintIconSize * 0.8, y: -metrics.hintIconSize * 0.5)
+                }
+                .offset(y: bounceOffset)
+                
+                Text("抬腕开始")
+                    .font(.system(size: metrics.hintTextSize, weight: .bold, design: .rounded))
+                    .tracking(0.5)
+                    .foregroundColor(.neonBlue)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.hintHeight)
+            .padding(.horizontal, metrics.horizontalPadding)
+            .background(
+                Capsule()
+                    .fill(Color.neonBlue.opacity(0.15))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.neonBlue.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.neonBlue.opacity(0.18), radius: 6, x: 0, y: 3)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                bounceOffset = -4
+            }
+        }
+    }
+}
+
+// MARK: - Progress Ring Component
+struct ProgressRing: View {
+    let progress: Double
+    let diameter: CGFloat
+    let strokeWidth: CGFloat
+    
+    private var progressGradient: AngularGradient {
+        let p = progress / 100.0
+        if p < 0.4 {
+            return AngularGradient(
+                gradient: Gradient(colors: [.successGreen, .successGreen]),
+                center: .center,
+                startAngle: .degrees(-90),
+                endAngle: .degrees(-90 + 360 * p)
+            )
+        } else if p < 0.8 {
+            return AngularGradient(
+                gradient: Gradient(colors: [.successGreen, .energyOrange]),
+                center: .center,
+                startAngle: .degrees(-90),
+                endAngle: .degrees(-90 + 360 * p)
+            )
+        } else {
+            return AngularGradient(
+                gradient: Gradient(colors: [.successGreen, .energyOrange, .dangerRed]),
+                center: .center,
+                startAngle: .degrees(-90),
+                endAngle: .degrees(-90 + 360 * p)
+            )
+        }
+    }
+    
+    private var glowColor: Color {
+        let p = progress
+        if p < 40 { return .successGreen }
+        else if p < 80 { return .energyOrange }
+        else { return .dangerRed }
+    }
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.cardBackgroundAlt, lineWidth: strokeWidth)
+                .frame(width: diameter, height: diameter)
+            
+            if progress > 0 {
+                Circle()
+                    .trim(from: 0, to: min(progress / 100, 1.0))
+                    .stroke(
+                        progressGradient,
+                        style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: diameter, height: diameter)
+                    .shadow(color: glowColor.opacity(0.3), radius: 6, x: 0, y: 0)
+            }
+        }
+    }
+}
+
+// MARK: - State Badge Component
+struct StateBadge: View {
+    let holdState: TrackerHoldState
+    let progress: Double
+    let reduceMotion: Bool
+    let size: CGFloat
+    let iconSize: CGFloat
+    @State private var pulseScale: CGFloat = 1.0
+    
+    private var badgeColor: Color {
+        switch holdState {
+        case .waiting: return .neonBlue
+        case .detecting: return .energyOrange
+        case .holding:
+            let p = progress
+            if p < 40 { return .successGreen }
+            else if p < 80 { return .energyOrange }
+            else { return .dangerRed }
+        }
+    }
+    
+    private var iconName: String {
+        switch holdState {
+        case .waiting: return "hand.raised.fill"
+        case .detecting: return "arrow.triangle.2.circlepath"
+        case .holding: return "lock.fill"
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(badgeColor.opacity(0.2))
+                .frame(width: size, height: size)
+            
+            Image(systemName: iconName)
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundColor(badgeColor)
+                .scaleEffect(holdState == .waiting ? pulseScale : 1.0)
+                .rotationEffect(.degrees(holdState == .detecting && !reduceMotion ? 360 : 0))
+                .animation(holdState == .detecting && !reduceMotion ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: holdState)
+        }
+        .onAppear {
+            guard holdState == .waiting, !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                pulseScale = 1.1
+            }
+        }
+    }
+}
+
+// MARK: - Idle View
 struct IdleView: View {
     let onStart: () -> Void
+    let reduceMotion: Bool
+    @State private var buttonScale: CGFloat = 1.0
+    @State private var iconScale: CGFloat = 1.0
     
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "figure.run")
-                .font(.system(size: 48))
-                .foregroundColor(.green)
+        GeometryReader { geometry in
+            let metrics = WatchLayoutMetrics(size: geometry.size)
             
-            Text("Pull-up Tracker")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
-            
-            Text("10 seconds = 1 rep")
-                .font(.system(size: 12))
-                .foregroundColor(.gray)
-            
-            Button(action: onStart) {
-                Text("Start Session")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(Color.green)
-                    .cornerRadius(25)
+            VStack(spacing: metrics.sectionSpacing) {
+                Spacer(minLength: 0)
+                
+                VStack(spacing: metrics.sectionSpacing * 1.5) {
+                    Image(systemName: "figure.core.training")
+                        .font(.system(size: metrics.idleIconSize))
+                        .foregroundColor(.successGreen)
+                        .scaleEffect(iconScale)
+                        .onAppear {
+                            guard !reduceMotion else { return }
+                            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                                iconScale = 1.1
+                            }
+                        }
+                    
+                    VStack(spacing: metrics.tightSpacing) {
+                        Text("Pull-up Tracker")
+                            .font(.system(size: metrics.titleSize, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.75)
+                        
+                        Text("10 seconds = 1 rep")
+                            .font(.system(size: metrics.subtitleSize, weight: .medium, design: .rounded))
+                            .foregroundColor(Color.white.opacity(0.55))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                .padding(.horizontal, metrics.horizontalPadding)
+                
+                Spacer(minLength: metrics.sectionSpacing)
+                
+                Button(action: {
+                    if !reduceMotion {
+                        buttonScale = 0.95
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            buttonScale = 1.0
+                        }
+                    }
+                    onStart()
+                }) {
+                    Text("Start Session")
+                        .font(.system(size: metrics.buttonFontSize + 1, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.oledBlack)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: metrics.buttonHeight + 8)
+                        .background(Color.successGreen)
+                        .cornerRadius((metrics.buttonHeight + 8) / 2)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .scaleEffect(buttonScale)
+                .padding(.horizontal, metrics.horizontalPadding)
             }
-            .buttonStyle(PlainButtonStyle())
+            .padding(.vertical, metrics.sectionSpacing)
         }
     }
 }
 
+// MARK: - Active View
 struct ActiveView: View {
     let holdState: TrackerHoldState
     let detectSeconds: Int
     let holdSeconds: Int
     let reps: Int
     let progress: Double
+    let totalHoldTime: Int
     let onEnd: () -> Void
-    let orangeColor: Color
+    let onDismissHint: () -> Void
+    let showHint: Bool
+    let reduceMotion: Bool
     
-    private var accentColor: Color { .green }
-    private var ringBackgroundColor: Color { Color.white.opacity(0.15) }
-    private var secondaryTextColor: Color { .secondary }
-    private var progressColor: Color {
-        let p = progress
-        if p < 40 { return .green }
-        else if p < 80 { return .orange }
-        else { return .red }
+    private var repsColor: Color {
+        .energyOrange
+    }
+    
+    private var ringTrackColor: Color {
+        Color.white.opacity(0.08)
+    }
+    
+    private var ringProgressColor: Color {
+        holdState == .waiting ? Color.white.opacity(0.16) : .energyOrange
+    }
+    
+    private var primaryValueColor: Color {
+        Color.white.opacity(0.96)
+    }
+    
+    private var secondaryTextColor: Color {
+        Color(red: 0.32, green: 0.38, blue: 0.50)
+    }
+    
+    private var endButtonBorderColor: Color {
+        Color(red: 0.58, green: 0.08, blue: 0.11)
+    }
+    
+    private var endButtonFillColor: Color {
+        Color(red: 0.20, green: 0.03, blue: 0.04)
+    }
+    
+    private var currentGoalSeconds: Int {
+        holdState == .holding ? 10 : 5
+    }
+    
+    private var displayedPrimaryValue: Int {
+        switch holdState {
+        case .waiting:
+            return 0
+        case .detecting:
+            return detectSeconds
+        case .holding:
+            return holdSeconds
+        }
+    }
+    
+    private var ringProgress: Double {
+        guard holdState != .waiting else { return 0.0 }
+        return min(progress / 100.0, 1.0)
+    }
+    
+    private var helperText: String {
+        switch holdState {
+        case .waiting:
+            return "of 5s"
+        case .detecting:
+            return "of 5s"
+        case .holding:
+            return "of 10s"
+        }
+    }
+    
+    private var statusText: String {
+        "REPS"
     }
     
     var body: some View {
         GeometryReader { geometry in
-            let circleSize = min(geometry.size.width, geometry.size.height) * 0.64
+            let isCompactScreen = geometry.size.width <= 176 || geometry.size.height <= 215
+            let canvasSide = min(geometry.size.width, geometry.size.height)
+            let ringDiameter = min(
+                geometry.size.width * (isCompactScreen ? 1.145 : 1.125),
+                geometry.size.height * (isCompactScreen ? 0.92 : 0.905)
+            ).clamped(to: isCompactScreen ? 186...198 : 232...244)
+            let ringStrokeWidth = (ringDiameter * 0.040).clamped(to: 7.8...10.4)
+            let repsValueSize = (ringDiameter * 0.164).clamped(to: 31...40)
+            let countdownSize = (ringDiameter * 0.304).clamped(to: 52...64)
+            let pauseButtonSize = (ringDiameter * 0.144).clamped(to: 28...33)
+            let pauseIconSize = (ringDiameter * 0.056).clamped(to: 10.5...13.5)
+            let topInset = ringDiameter * 0.126
+            let centerValueOffsetY = -ringDiameter * 0.006
+            let bottomInset = ringDiameter * 0.13
+            let arcRotation = Angle.degrees(-68)
             
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .stroke(ringBackgroundColor, lineWidth: 8)
-                    
-                    // Use system green for the progress ring to align with Apple HIG
-                    Circle()
-                        .trim(from: 0, to: progress / 100)
-                        .stroke(Color.green, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .shadow(color: Color.black.opacity(0.25), radius: 3, x: 0, y: 2)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: progress)
-                    
-                    VStack(spacing: 2) {
-                        Text("REPS")
-                            .font(.system(.caption2, design: .rounded))
-                            .fontWeight(.semibold)
-                            .foregroundColor(secondaryTextColor)
-                            .tracking(1)
-                        Text("\(reps)")
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
-                            .foregroundColor(holdState == .holding ? progressColor : .white)
-                    }
-                }
-                .frame(width: circleSize, height: circleSize)
-                .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 2)
+            ZStack {
+                Circle()
+                    .stroke(ringTrackColor, lineWidth: ringStrokeWidth)
+                    .frame(width: ringDiameter, height: ringDiameter)
                 
-                Group {
-                    switch holdState {
-                    case .waiting:
-                        VStack(spacing: 6) {
-                            Image(systemName: "hand.raised.fill")
-                                .font(.system(size: 22, weight: .medium))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundColor(progressColor)
-                            Text("Raise hand")
-                                .font(.system(.caption2, design: .rounded))
-                                .fontWeight(.medium)
-                                .foregroundColor(secondaryTextColor)
-                        }
-                    
-                    case .detecting:
-                        VStack(spacing: 4) {
-                            Text("\(detectSeconds)")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                            Text("seconds")
-                                .font(.system(.caption2, design: .rounded))
-                                .foregroundColor(secondaryTextColor)
-                        }
-                    
-                    case .holding:
-                        VStack(spacing: 4) {
-                            Text("\(holdSeconds)")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundColor(progressColor)
-                            Text("of 10s")
-                                .font(.system(.caption2, design: .rounded))
-                                .foregroundColor(secondaryTextColor)
-                        }
-                    }
-                }
-                
-                Spacer()
-                    .frame(height: 8)
-                Button(action: onEnd) {
-                    Text("End")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                }
-                .buttonStyle(BorderedProminentButtonStyle())
+                Circle()
+                    .trim(from: 0, to: ringProgress)
+                    .stroke(
+                        ringProgressColor,
+                        style: StrokeStyle(lineWidth: ringStrokeWidth, lineCap: .round)
+                    )
+                    .rotationEffect(arcRotation)
+                    .frame(width: ringDiameter, height: ringDiameter)
+                    .opacity(holdState == .waiting ? 0.22 : 1.0)
+                    .shadow(color: ringProgressColor.opacity(holdState == .waiting ? 0.0 : 0.22), radius: 6, x: 0, y: 0)
+
+                Text("\(displayedPrimaryValue)")
+                    .font(.system(size: countdownSize, weight: .heavy, design: .rounded))
+                    .foregroundColor(primaryValueColor)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.72)
+                    .lineLimit(1)
+                    .offset(y: centerValueOffsetY)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .overlay(alignment: .top) {
+                VStack(spacing: 0) {
+                    Text("\(reps)")
+                        .font(.system(size: repsValueSize, weight: .bold, design: .rounded))
+                        .foregroundColor(repsColor)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.75)
+                }
+                .padding(.top, topInset)
+            }
+            .overlay(alignment: .bottom) {
+                Button(action: onEnd) {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: pauseIconSize, weight: .black))
+                        .foregroundColor(Color(red: 1.0, green: 0.42, blue: 0.47))
+                        .frame(width: pauseButtonSize, height: pauseButtonSize)
+                        .background(
+                            Circle()
+                                .fill(endButtonFillColor)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(endButtonBorderColor, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.bottom, bottomInset)
+            }
+            .frame(width: ringDiameter, height: ringDiameter)
+            .frame(width: canvasSide, height: canvasSide)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.oledBlack)
+            .ignoresSafeArea()
         }
     }
 }
 
+// MARK: - Summary View
 struct SummaryView: View {
     let reps: Int
     let totalHoldTime: Int
     let onDone: () -> Void
-    let orangeColor: Color
+    let reduceMotion: Bool
     
-    @State private var contentHeight: CGFloat = 0
+    @State private var contentOpacity: Double = 0
+    @State private var contentScale: CGFloat = 0.95
     
     private func formatTime(_ seconds: Int) -> String {
         let mins = seconds / 60
@@ -458,89 +808,167 @@ struct SummaryView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let scaleFactor = min(geometry.size.height / 242, 1.0)
+            let metrics = WatchLayoutMetrics(size: geometry.size)
             
-            VStack {
-                Spacer()
-                VStack(spacing: 8 * scaleFactor) {
-                    HStack(spacing: 5 * scaleFactor) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14 * scaleFactor))
-                            .foregroundColor(.green)
-                        Text("Complete")
-                            .font(.system(size: 13 * scaleFactor, weight: .bold))
-                            .foregroundColor(.white)
-                    }
+            VStack(spacing: metrics.sectionSpacing) {
+                Spacer(minLength: 0)
+                
+                VStack(spacing: metrics.tightSpacing) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: metrics.stateIconSize + 6))
+                        .foregroundColor(.successGreen)
                     
-                    HStack(spacing: 8 * scaleFactor) {
-                        VStack(spacing: 2 * scaleFactor) {
-                            Image(systemName: "figure.pullup")
-                                .font(.system(size: 14 * scaleFactor))
-                                .foregroundColor(orangeColor)
-                            Text("\(reps)")
-                                .font(.system(size: 28 * scaleFactor, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("REPS")
-                                .font(.system(size: 8 * scaleFactor))
-                                .foregroundColor(.gray)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10 * scaleFactor)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(12 * scaleFactor)
-                        
-                        VStack(spacing: 2 * scaleFactor) {
-                            Image(systemName: "timer")
-                                .font(.system(size: 14 * scaleFactor))
-                                .foregroundColor(orangeColor)
-                            Text(formatTime(totalHoldTime))
-                                .font(.system(size: 28 * scaleFactor, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("TIME")
-                                .font(.system(size: 8 * scaleFactor))
-                                .foregroundColor(.gray)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10 * scaleFactor)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(12 * scaleFactor)
-                    }
-                    
-                    HStack(spacing: 8 * scaleFactor) {
-                        VStack(spacing: 2 * scaleFactor) {
-                            Text("\(avgHoldTime)s")
-                                .font(.system(size: 20 * scaleFactor, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("AVG HOLD")
-                                .font(.system(size: 8 * scaleFactor))
-                                .foregroundColor(.gray)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8 * scaleFactor)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(12 * scaleFactor)
-                        
-                        Button(action: onDone) {
-                            Text("Done")
-                                .font(.system(size: 12 * scaleFactor, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10 * scaleFactor)
-                                .background(orangeColor)
-                                .cornerRadius(12 * scaleFactor)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
+                    Text("Session Complete")
+                        .font(.system(size: metrics.titleSize, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(.horizontal, 8 * scaleFactor)
-                Spacer()
+                .opacity(contentOpacity)
+                .scaleEffect(contentScale)
+                
+                HStack(spacing: metrics.sectionSpacing) {
+                    StatCard(
+                        icon: "figure.pullup",
+                        value: "\(reps)",
+                        label: "REPS",
+                        color: .energyOrange,
+                        metrics: metrics
+                    )
+                    
+                    StatCard(
+                        icon: "timer",
+                        value: formatTime(totalHoldTime),
+                        label: "TIME",
+                        color: .energyOrange,
+                        metrics: metrics
+                    )
+                }
+                
+                HStack(spacing: metrics.sectionSpacing) {
+                    StatCard(
+                        icon: nil,
+                        value: "\(avgHoldTime)s",
+                        label: "AVG HOLD",
+                        color: .white,
+                        metrics: metrics
+                    )
+                    
+                    StatCard(
+                        icon: "target",
+                        value: "10s",
+                        label: "GOAL",
+                        color: .white,
+                        metrics: metrics
+                    )
+                }
+                
+                Spacer(minLength: 0)
+                
+                Button(action: onDone) {
+                    Text("Done")
+                        .font(.system(size: metrics.buttonFontSize + 1, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: metrics.buttonHeight + 4)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(metrics.cardCornerRadius)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.vertical, metrics.sectionSpacing)
+        }
+        .onAppear {
+            if reduceMotion {
+                contentOpacity = 1.0
+                contentScale = 1.0
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    contentOpacity = 1.0
+                    contentScale = 1.0
+                }
             }
         }
     }
 }
 
+// MARK: - Stat Card Component
+struct StatCard: View {
+    let icon: String?
+    let value: String
+    let label: String
+    let color: Color
+    let metrics: WatchLayoutMetrics
+    
+    var body: some View {
+        VStack(spacing: metrics.tightSpacing) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.system(size: metrics.statIconSize))
+                    .foregroundColor(color)
+            }
+            
+            Text(value)
+                .font(.system(size: metrics.statValueSize, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            
+            Text(label)
+                .font(.system(size: metrics.statLabelSize, weight: .semibold, design: .rounded))
+                .tracking(1)
+                .foregroundColor(Color.white.opacity(0.4))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, metrics.statCardVerticalPadding)
+        .background(Color.cardBackground)
+        .cornerRadius(metrics.cardCornerRadius)
+    }
+}
+
 struct PullUpTrackerView_Previews: PreviewProvider {
     static var previews: some View {
-        PullUpTrackerView()
+        Group {
+            PullUpTrackerView()
+                .previewDisplayName("Idle 40mm")
+                .previewLayout(.fixed(width: 162, height: 197))
+            
+            PullUpTrackerView()
+                .previewDisplayName("Idle 45mm")
+                .previewLayout(.fixed(width: 198, height: 242))
+            
+            ActiveView(
+                holdState: .waiting,
+                detectSeconds: 0,
+                holdSeconds: 0,
+                reps: 2,
+                progress: 0,
+                totalHoldTime: 24,
+                onEnd: {},
+                onDismissHint: {},
+                showHint: true,
+                reduceMotion: true
+            )
+            .previewDisplayName("Waiting 40mm")
+            .previewLayout(.fixed(width: 162, height: 197))
+            
+            ActiveView(
+                holdState: .holding,
+                detectSeconds: 5,
+                holdSeconds: 7,
+                reps: 4,
+                progress: 72,
+                totalHoldTime: 68,
+                onEnd: {},
+                onDismissHint: {},
+                showHint: false,
+                reduceMotion: true
+            )
+            .previewDisplayName("Holding 45mm")
+            .previewLayout(.fixed(width: 198, height: 242))
+        }
     }
 }

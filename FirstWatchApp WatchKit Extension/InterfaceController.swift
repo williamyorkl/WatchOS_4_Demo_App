@@ -157,7 +157,7 @@ class InterfaceController: WKInterfaceController {
                 self.sendRequestToHabitica(pullUpCount: self.pullUpCount)
             }
         }
-        RunLoop.current.add(self.countSecondTimer, forMode: .commonModes)
+        RunLoop.current.add(self.countSecondTimer, forMode: .common)
     }
 
     
@@ -255,7 +255,7 @@ class InterfaceController: WKInterfaceController {
                                 })
 
             // Add the timer to the current run loop.
-            RunLoop.current.add(timer1, forMode: .commonModes)
+            RunLoop.current.add(timer1, forMode: .common)
         }else {
             print("❌ 初始化失败：加速度传感器不可用")
         }
@@ -650,13 +650,13 @@ class InterfaceController: WKInterfaceController {
 //    }
     
     private func setPullUpCount(pullUpCount:String){
-        let fontAttrs = [NSAttributedStringKey.font : UIFont.systemFont(ofSize: 32)]
+        let fontAttrs = [NSAttributedString.Key.font : UIFont.systemFont(ofSize: 32)]
         let attrString = NSAttributedString(string: pullUpCount, attributes: fontAttrs)
         pullupLabel.setAttributedText(attrString)
     }
     
     private func setPullUpCount(log:String){
-        let fontAttrs = [NSAttributedStringKey.font : UIFont.systemFont(ofSize: 16)]
+        let fontAttrs = [NSAttributedString.Key.font : UIFont.systemFont(ofSize: 16)]
         let attrString = NSAttributedString(string: log, attributes: fontAttrs)
         logLabel.setAttributedText(attrString)
     }
@@ -665,7 +665,7 @@ class InterfaceController: WKInterfaceController {
     
     
     private func setCount(count: String) {
-        let fontAttrs = [NSAttributedStringKey.font : UIFont.systemFont(ofSize: 12)]
+        let fontAttrs = [NSAttributedString.Key.font : UIFont.systemFont(ofSize: 12)]
         let attrString = NSAttributedString(string: count, attributes: fontAttrs)
         countLabel.setAttributedText(attrString)
     }

@@ -55,7 +55,7 @@ class ViewController: UIViewController {
 
 extension ViewController : WCSessionDelegate {
     
-    func session(_ session: WCSession,
+    func session(_ session: WCSession, 
                  didReceiveApplicationContext applicationContext: [String : Any]) {
         print(applicationContext)
         if let count = applicationContext["WatchCountKey"],
