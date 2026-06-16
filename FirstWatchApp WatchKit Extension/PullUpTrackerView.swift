@@ -720,143 +720,106 @@ struct SummaryView: View {
     let totalHoldTime: Int
     let onDone: () -> Void
     let reduceMotion: Bool
-    
-    @State private var contentOpacity: Double = 0
-    @State private var contentScale: CGFloat = 0.95
-    
+
+    @State private var showContent = false
+    @State private var checkmarkScale: CGFloat = 0.3
+
     private func formatTime(_ seconds: Int) -> String {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
     }
-    
+
     private var avgHoldTime: String {
-        if reps > 0 {
-            return String(format: "%.1f", Double(totalHoldTime) / Double(reps))
-        }
-        return "0"
+        reps > 0 ? String(format: "%.1f", Double(totalHoldTime) / Double(reps)) : "0"
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
-            let metrics = WatchLayoutMetrics(size: geometry.size)
-            
-            VStack(spacing: metrics.sectionSpacing) {
-                Spacer(minLength: 0)
-                
-                VStack(spacing: metrics.tightSpacing) {
+            let w = geometry.size.width
+            let h = geometry.size.height
+            let padding = w * 0.06
+
+            ZStack {
+                Color.oledBlack.ignoresSafeArea()
+
+                if !showContent {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: metrics.stateIconSize + 6))
+                        .font(.system(size: min(w, h) * 0.22))
                         .foregroundColor(.successGreen)
-                    
-                    Text("Session Complete")
-                        .font(.system(size: metrics.titleSize, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
+                        .scaleEffect(checkmarkScale)
+                } else {
+                    VStack(spacing: h * 0.025) {
+                        VStack(spacing: h * 0.02) {
+                            HStack(spacing: padding * 0.5) {
+                                summaryStat(icon: "figure.pullup", value: "\(reps)", label: "REPS", color: .energyOrange, w: w)
+                                summaryStat(icon: "timer", value: formatTime(totalHoldTime), label: "TIME", color: .energyOrange, w: w)
+                            }
+
+                            HStack(spacing: padding * 0.5) {
+                                summaryStat(icon: "stopwatch", value: "\(avgHoldTime)s", label: "AVG HOLD", color: .white, w: w)
+                                summaryStat(icon: "target", value: "10s", label: "GOAL", color: .white, w: w)
+                            }
+                        }
+                        .frame(maxHeight: .infinity)
+
+                        Button(action: onDone) {
+                            Text("Done")
+                                .font(.system(size: w * 0.05, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: h * 0.12)
+                                .background(Color.white.opacity(0.15))
+                                .cornerRadius(h * 0.06)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    .padding(.horizontal, padding)
+                    .padding(.vertical, h * 0.04)
+                    .transition(.opacity)
                 }
-                .opacity(contentOpacity)
-                .scaleEffect(contentScale)
-                
-                HStack(spacing: metrics.sectionSpacing) {
-                    StatCard(
-                        icon: "figure.pullup",
-                        value: "\(reps)",
-                        label: "REPS",
-                        color: .energyOrange,
-                        metrics: metrics
-                    )
-                    
-                    StatCard(
-                        icon: "timer",
-                        value: formatTime(totalHoldTime),
-                        label: "TIME",
-                        color: .energyOrange,
-                        metrics: metrics
-                    )
-                }
-                
-                HStack(spacing: metrics.sectionSpacing) {
-                    StatCard(
-                        icon: nil,
-                        value: "\(avgHoldTime)s",
-                        label: "AVG HOLD",
-                        color: .white,
-                        metrics: metrics
-                    )
-                    
-                    StatCard(
-                        icon: "target",
-                        value: "10s",
-                        label: "GOAL",
-                        color: .white,
-                        metrics: metrics
-                    )
-                }
-                
-                Spacer(minLength: 0)
-                
-                Button(action: onDone) {
-                    Text("Done")
-                        .font(.system(size: metrics.buttonFontSize + 1, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: metrics.buttonHeight + 4)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(metrics.cardCornerRadius)
-                }
-                .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.vertical, metrics.sectionSpacing)
         }
+        .ignoresSafeArea()
         .onAppear {
             if reduceMotion {
-                contentOpacity = 1.0
-                contentScale = 1.0
+                showContent = true
+                checkmarkScale = 1.0
             } else {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    contentOpacity = 1.0
-                    contentScale = 1.0
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    checkmarkScale = 1.0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showContent = true
+                    }
                 }
             }
         }
     }
-}
 
-// MARK: - Stat Card Component
-struct StatCard: View {
-    let icon: String?
-    let value: String
-    let label: String
-    let color: Color
-    let metrics: WatchLayoutMetrics
-    
-    var body: some View {
-        VStack(spacing: metrics.tightSpacing) {
-            if let icon = icon {
-                Image(systemName: icon)
-                    .font(.system(size: metrics.statIconSize))
-                    .foregroundColor(color)
-            }
-            
+    private func summaryStat(icon: String, value: String, label: String, color: Color, w: CGFloat) -> some View {
+        VStack(spacing: w * 0.012) {
+            Image(systemName: icon)
+                .font(.system(size: w * 0.06))
+                .foregroundColor(color)
+
             Text(value)
-                .font(.system(size: metrics.statValueSize, weight: .bold, design: .rounded))
+                .font(.system(size: w * 0.1, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .monospacedDigit()
+                .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
-            
+
             Text(label)
-                .font(.system(size: metrics.statLabelSize, weight: .semibold, design: .rounded))
-                .tracking(1)
-                .foregroundColor(Color.white.opacity(0.4))
+                .font(.system(size: w * 0.035, weight: .semibold, design: .rounded))
+                .foregroundColor(color.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, metrics.statCardVerticalPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.cardBackground)
-        .cornerRadius(metrics.cardCornerRadius)
+        .cornerRadius(w * 0.045)
     }
 }
 
@@ -906,6 +869,15 @@ struct PullUpTrackerView_Previews: PreviewProvider {
                 reduceMotion: false
             )
             .previewDisplayName("Holding — SE 40mm")
+            .previewLayout(.fixed(width: 324, height: 394))
+
+            SummaryView(
+                reps: 4,
+                totalHoldTime: 40,
+                onDone: {},
+                reduceMotion: false
+            )
+            .previewDisplayName("Summary — SE 40mm")
             .previewLayout(.fixed(width: 324, height: 394))
         }
     }
