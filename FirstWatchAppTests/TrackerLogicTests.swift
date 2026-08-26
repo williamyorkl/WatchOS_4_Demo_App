@@ -17,32 +17,21 @@ import XCTest
 final class TrackerLogicTests: XCTestCase {
 
     // MARK: - Detecting Phase Counting
+    //
+    // detectThreshold is now a SINGLE settle tick: the pose was already
+    // confirmed by MotionStateMachine (detecting 0.8 s + confirmed 0.2 s), so
+    // the old second 3 s detection layer was pure uncounted overhead (fix #3).
 
-    func test_tick_detectingPhase_incrementsDetectSeconds() {
+    func test_tick_detectingPhase_transitionsToHolding_afterOneTick() {
         var logic = TrackerLogic()
         logic.startSession()
-        logic.apply(event: .enteredActive)   // → detecting
+        logic.apply(event: .enteredActive)
         XCTAssertEqual(logic.holdPhase, .detecting)
         XCTAssertEqual(logic.detectSeconds, 0)
 
         logic.tick(motionIsActive: true)
         XCTAssertEqual(logic.detectSeconds, 1)
-
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.detectSeconds, 2)
-    }
-
-    func test_tick_detectingThreshold_transitionsToHolding() {
-        var logic = TrackerLogic()
-        logic.startSession()
-        logic.apply(event: .enteredActive)
-
-        logic.tick(motionIsActive: true)
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.holdPhase, .detecting)
-
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.holdPhase, .holding, "After 3 ticks (detectThreshold=3), should transition to holding")
+        XCTAssertEqual(logic.holdPhase, .holding, "After 1 tick (detectThreshold=1), should transition to holding")
         XCTAssertEqual(logic.holdSeconds, 0, "holdSeconds should reset to 0 on transition")
     }
 
@@ -50,12 +39,14 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
+        XCTAssertEqual(logic.progress, 0, "Detecting starts at 0%")
 
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.progress, 100.0 / 3.0, accuracy: 0.1, "1/3 = 33.3%")
-
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.progress, 200.0 / 3.0, accuracy: 0.1, "2/3 = 66.7%")
+        // The settle window is one tick; verify the progress math directly
+        // (the transition to holding happens on the same tick).
+        logic.holdPhase = .detecting
+        logic.detectSeconds = TrackerLogic.detectThreshold
+        XCTAssertEqual(logic.progress, 100.0, accuracy: 0.1,
+                       "The 1-tick settle window reads as full confirmation progress")
     }
 
     // MARK: - Holding Phase Counting
@@ -64,7 +55,7 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
         XCTAssertEqual(logic.holdPhase, .holding)
 
         logic.tick(motionIsActive: true)
@@ -78,7 +69,7 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // detecting → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
 
         // 9 ticks: no rep yet
         for _ in 0..<9 {
@@ -95,7 +86,7 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
 
         for _ in 0..<7 { logic.tick(motionIsActive: true) }
         XCTAssertEqual(logic.totalHoldTime, 7)
@@ -108,7 +99,7 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
 
         for _ in 0..<5 { logic.tick(motionIsActive: true) }
         XCTAssertEqual(logic.holdSeconds, 5)
@@ -210,17 +201,82 @@ final class TrackerLogicTests: XCTestCase {
         XCTAssertEqual(logic.holdPhase, .waiting, "enteredPaused should set holdPhase to waiting")
     }
 
-    func test_resumedActive_afterPause_setsDetecting() {
+    func test_resumedActive_afterLongRest_setsDetecting_freshSet() {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
+        logic.tick(motionIsActive: true)  // → holding
+        logic.tick(motionIsActive: true)  // holdSeconds = 1
         logic.apply(event: .enteredPaused)
         XCTAssertEqual(logic.holdPhase, .waiting)
 
-        logic.apply(event: .resumedActive)
+        // Real rest (gap beyond the regrip grace) restarts the set.
+        logic.apply(event: .resumedActive(gap: TrackerLogic.regripGraceSeconds + 1))
 
-        XCTAssertEqual(logic.holdPhase, .detecting, "resumedActive should set holdPhase to detecting")
-        XCTAssertEqual(logic.detectSeconds, 0, "resumedActive should reset detectSeconds")
+        XCTAssertEqual(logic.holdPhase, .detecting, "Long rest must re-enter detection for a fresh set")
+        XCTAssertEqual(logic.detectSeconds, 0)
+    }
+
+    func test_resumedActive_quickRegrip_continuesSameSet() {
+        // Fix #4: a quick regrip (drop, chalk, re-grab within the grace
+        // window) must NOT throw away the in-progress set. Old behaviour: the
+        // set reset to zero, so 8 s + regrip + 8 s still counted nothing.
+        var logic = TrackerLogic()
+        logic.startSession()
+        logic.apply(event: .enteredActive)
+        logic.tick(motionIsActive: true)  // → holding
+        for _ in 0..<8 { logic.tick(motionIsActive: true) }   // holdSeconds = 8
+        XCTAssertEqual(logic.holdSeconds, 8)
+
+        logic.apply(event: .enteredPaused)
+        XCTAssertEqual(logic.holdPhase, .waiting)
+        XCTAssertEqual(logic.holdSeconds, 8, "enteredPaused must PRESERVE holdSeconds pending the resume gap")
+
+        logic.apply(event: .resumedActive(gap: 2.0))
+
+        XCTAssertEqual(logic.holdPhase, .holding, "Quick regrip must resume the SAME set")
+        XCTAssertEqual(logic.holdSeconds, 8, "The in-progress set continues where it left off")
+
+        // Two more hanging seconds complete the rep that the old code lost.
+        for _ in 0..<2 { _ = logic.tick(motionIsActive: true) }
+        XCTAssertEqual(logic.reps, 1, "8 s + regrip + 2 s must complete the set")
+    }
+
+    func test_regripGraceBoundary() {
+        var logic = TrackerLogic()
+        logic.startSession()
+        logic.apply(event: .enteredActive)
+        logic.tick(motionIsActive: true)
+        for _ in 0..<5 { logic.tick(motionIsActive: true) }
+        logic.apply(event: .enteredPaused)
+
+        // Exactly at the grace boundary: still the same set.
+        logic.apply(event: .resumedActive(gap: TrackerLogic.regripGraceSeconds))
+        XCTAssertEqual(logic.holdPhase, .holding)
+
+        // One second beyond: fresh set.
+        logic.apply(event: .enteredPaused)
+        logic.apply(event: .resumedActive(gap: TrackerLogic.regripGraceSeconds + 0.1))
+        XCTAssertEqual(logic.holdPhase, .detecting)
+    }
+
+    func test_adoptMotionActive_reentersDetection() {
+        // Fix #1's sibling: resuming a USER pause while still hanging must not
+        // strand the counters in .waiting.
+        var logic = TrackerLogic()
+        logic.startSession()
+        logic.apply(event: .enteredActive)
+        logic.tick(motionIsActive: true)
+        XCTAssertEqual(logic.holdPhase, .holding)
+
+        // Simulate a user pause: phase frozen mid-hold.
+        // (User pause leaves holdPhase as-is in the engine; resuming while the
+        // machine is still .active calls adoptMotionActive.)
+        logic.holdPhase = .waiting
+
+        logic.adoptMotionActive()
+        XCTAssertEqual(logic.holdPhase, .detecting)
+        XCTAssertEqual(logic.detectSeconds, 0)
     }
 
     // MARK: - Progress Calculation
@@ -230,27 +286,28 @@ final class TrackerLogicTests: XCTestCase {
         XCTAssertEqual(logic.progress, 0)
     }
 
-    func test_progress_detectingAtMax_is100() {
+    func test_progress_detectingIsCappedAt100() {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
         logic.tick(motionIsActive: true)
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.progress, 200.0 / 3.0, accuracy: 0.1)
-
-        logic.tick(motionIsActive: true)
-        XCTAssertEqual(logic.holdPhase, .holding, "Should have transitioned to holding")
+        XCTAssertEqual(logic.holdPhase, .holding, "Should have transitioned to holding after the settle tick")
+        // Manually push detectSeconds past the threshold: progress must clamp.
+        logic.holdPhase = .detecting
+        logic.detectSeconds = 5
+        XCTAssertEqual(logic.progress, 100.0, accuracy: 0.1,
+                       "Detecting progress must clamp at 100, never exceed it")
     }
 
     // MARK: - Integration: Full Rep Cycle
 
-    func test_fullRepCycle_detect3s_hold10s_rep() {
+    func test_fullRepCycle_settle1s_hold10s_rep() {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
 
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }
-        XCTAssertEqual(logic.holdPhase, .holding, "After 3s detecting, should be holding")
+        logic.tick(motionIsActive: true)
+        XCTAssertEqual(logic.holdPhase, .holding, "After the 1-tick settle, should be holding")
 
         for _ in 0..<10 { logic.tick(motionIsActive: true) }
         XCTAssertEqual(logic.reps, 1, "After 10s holding, should have 1 rep")
@@ -263,7 +320,7 @@ final class TrackerLogicTests: XCTestCase {
         logic.startSession()
         logic.apply(event: .enteredActive)
 
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }
+        logic.tick(motionIsActive: true)                     // settle
         for _ in 0..<10 { logic.tick(motionIsActive: true) }
         XCTAssertEqual(logic.reps, 1)
 
@@ -281,7 +338,7 @@ final class TrackerLogicTests: XCTestCase {
         logic.startSession()
         logic.apply(event: .enteredActive)
 
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
         for _ in 0..<5 { logic.tick(motionIsActive: true) }
         XCTAssertEqual(logic.holdPhase, .holding)
         XCTAssertEqual(logic.holdSeconds, 5)
@@ -295,8 +352,8 @@ final class TrackerLogicTests: XCTestCase {
         XCTAssertEqual(logic.reps, 0, "Paused ticks must not count toward a rep")
         XCTAssertEqual(logic.totalHoldTime, 5)
 
-        // Resume → re-detect
-        logic.apply(event: .resumedActive)
+        // Resume after a LONG rest (gap beyond grace) → re-detect, fresh set
+        logic.apply(event: .resumedActive(gap: TrackerLogic.regripGraceSeconds + 1))
         XCTAssertEqual(logic.holdPhase, .detecting)
         XCTAssertEqual(logic.detectSeconds, 0, "After resume, detectSeconds resets to 0")
     }
@@ -331,7 +388,7 @@ final class TrackerLogicTests: XCTestCase {
         logic.apply(event: .enteredActive)
         XCTAssertNil(logic.holdBand, "No band while detecting")
 
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
         XCTAssertNotNil(logic.holdBand)
         XCTAssertEqual(logic.holdBand, .warming, "Just entered holding → warming")
     }
@@ -340,7 +397,7 @@ final class TrackerLogicTests: XCTestCase {
         var logic = TrackerLogic()
         logic.startSession()
         logic.apply(event: .enteredActive)
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // → holding, holdSeconds=0
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding, holdSeconds=0
 
         // progress = holdSeconds/10*100. 4 ticks → 40% → cruising boundary.
         for _ in 0..<4 { logic.tick(motionIsActive: true) }
@@ -391,6 +448,43 @@ final class TrackerLogicTests: XCTestCase {
         XCTAssertEqual(logic.reps, 0, "Counters stay reset across the countdown boundary")
     }
 
+    func test_finishCountdown_motionAlreadyActive_reentersDetection() {
+        // Fix #1 regression guard: the user grabbed the bar DURING the 3-2-1
+        // countdown (the countdown's entire purpose), so the motion machine
+        // already emitted .enteredActive and sits in .active. The old
+        // unconditional `holdPhase = .waiting` here stranded the counters
+        // forever — no further transition event could ever arrive. The
+        // reconciled finish must re-enter detection instead.
+        var logic = TrackerLogic()
+        logic.startCountdown()
+        // Early grab: the event arrives while still counting down.
+        logic.apply(event: .enteredActive)
+        XCTAssertEqual(logic.holdPhase, .detecting)
+
+        while !logic.tickCountdown() {}
+        logic.finishCountdown(motionAlreadyActive: true)
+
+        XCTAssertEqual(logic.sessionPhase, .active)
+        XCTAssertEqual(logic.holdPhase, .detecting,
+                       "Reconciliation must preserve detection for an already-confirmed hang")
+        XCTAssertEqual(logic.detectSeconds, 0)
+
+        // And counting proceeds normally from there.
+        logic.tick(motionIsActive: true)
+        XCTAssertEqual(logic.holdPhase, .holding)
+    }
+
+    func test_finishCountdown_withoutMotion_staysWaiting() {
+        var logic = TrackerLogic()
+        logic.startCountdown()
+        while !logic.tickCountdown() {}
+        logic.finishCountdown(motionAlreadyActive: false)
+
+        XCTAssertEqual(logic.sessionPhase, .active)
+        XCTAssertEqual(logic.holdPhase, .waiting,
+                       "No grab yet → waiting until the motion pipeline confirms a hang")
+    }
+
     func test_cancelCountdown_returnsToIdle() {
         var logic = TrackerLogic()
         logic.startCountdown()
@@ -420,7 +514,7 @@ final class TrackerLogicTests: XCTestCase {
         XCTAssertEqual(logic.sessionPhase, .active)
         logic.apply(event: .enteredActive)
 
-        for _ in 0..<3 { logic.tick(motionIsActive: true) }   // detecting → holding
+        for _ in 0..<1 { logic.tick(motionIsActive: true) }   // settle → holding
         for _ in 0..<10 { logic.tick(motionIsActive: true) }  // hold → 1 rep
         XCTAssertEqual(logic.reps, 1)
         XCTAssertEqual(logic.totalHoldTime, 10)

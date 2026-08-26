@@ -18,8 +18,9 @@ final class PullUpTrackerGoldenTests: XCTestCase {
 
         var detecting = TrackerLogic()
         detecting.holdPhase = .detecting
-        detecting.detectSeconds = 2
-        XCTAssertEqual(detecting.progress, 200.0 / 3.0, accuracy: 0.1)
+        detecting.detectSeconds = 1
+        XCTAssertEqual(detecting.progress, 100.0, accuracy: 0.1,
+                       "The settle window is a single tick")
 
         var holding = TrackerLogic()
         holding.holdPhase = .holding
@@ -30,7 +31,7 @@ final class PullUpTrackerGoldenTests: XCTestCase {
     func test_appConstants_areExpectedValues() {
         var logic = TrackerLogic()
         logic.holdPhase = .detecting
-        logic.detectSeconds = 3
+        logic.detectSeconds = 1
         XCTAssertEqual(logic.progress, 100.0, accuracy: 0.1,
                        "detectThreshold should be \(TrackerLogic.detectThreshold)")
 
@@ -41,7 +42,12 @@ final class PullUpTrackerGoldenTests: XCTestCase {
 
         // Pin the magic constants explicitly so a future refactor can't silently
         // change them and break the rep cadence users have trained to.
-        XCTAssertEqual(TrackerLogic.detectThreshold, 3)
+        // detectThreshold = 1: pose confirmation lives in MotionStateMachine
+        // (0.8 s detecting + 0.2 s confirmed); this is only a settle tick, so a
+        // grab starts counting in ~2 s instead of the old ~5 s.
+        XCTAssertEqual(TrackerLogic.detectThreshold, 1)
         XCTAssertEqual(TrackerLogic.targetHoldSeconds, 10)
+        XCTAssertEqual(TrackerLogic.regripGraceSeconds, 4.0)
+        XCTAssertEqual(TrackerLogic.countdownSeconds, 3)
     }
 }

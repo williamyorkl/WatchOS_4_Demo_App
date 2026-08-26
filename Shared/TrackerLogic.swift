@@ -18,13 +18,23 @@ import Foundation
 /// to be a member of the iOS test host target.
 struct TrackerLogic {
 
-    // MARK: - Configuration (magic constants — DO NOT change; tests pin these)
+    // MARK: - Configuration (magic constants — pinned by tests)
 
-    /// Seconds the wrist must stay raised (in `.detecting`) before counting a hold.
-    static let detectThreshold: Int = 3
+    /// One-second settle tick after the motion pipeline confirms the hang pose.
+    /// The heavy lifting (pose confirmation) already happened in
+    /// `MotionStateMachine` (detecting + confirmed); this is only a grace tick,
+    /// so the total uncounted overhead per grab is ~2 s instead of the old ~5 s
+    /// of two stacked detection layers.
+    static let detectThreshold: Int = 1
 
     /// Seconds of continuous hold that count as one completed set/rep.
     static let targetHoldSeconds: Int = 10
+
+    /// How long the user may be off the bar (regrip, chalk, shake-out) before
+    /// the in-progress set resets. A drop shorter than this continues the SAME
+    /// set when they re-grab; a longer rest starts a fresh set. Hang time is
+    /// never lost either way — `totalHoldTime` always accumulates.
+    static let regripGraceSeconds: Double = 4.0
 
     // MARK: - State (value type — cheap to copy, easy to test)
 
@@ -96,9 +106,30 @@ struct TrackerLogic {
 
     /// Transition from countdown into the active session (counters were already
     /// reset by `startCountdown`).
-    mutating func finishCountdown() {
+    ///
+    /// `motionAlreadyActive` fixes the early-grab deadlock: the motion
+    /// pipeline runs *during* the countdown (by design — the countdown exists
+    /// so the user can grab the bar). If the user grabbed early, the state
+    /// machine has ALREADY emitted `.enteredActive` and sits in `.active`; an
+    /// unconditional `holdPhase = .waiting` here would strand the counters in
+    /// waiting forever (no further transition event would ever arrive). Passing
+    /// the machine's state in re-enters detection instead.
+    mutating func finishCountdown(motionAlreadyActive: Bool = false) {
         sessionPhase = .active
-        holdPhase = .waiting
+        if motionAlreadyActive {
+            holdPhase = .detecting
+            detectSeconds = 0
+        } else {
+            holdPhase = .waiting
+        }
+    }
+
+    /// Re-enter detection when motion is *already* confirmed active — used when
+    /// the user resumes a user-paused session while still hanging. Without this
+    /// the same waiting-phase stranding as the countdown deadlock occurs.
+    mutating func adoptMotionActive() {
+        holdPhase = .detecting
+        detectSeconds = 0
     }
 
     /// Abort the countdown back to idle (user backed out). Mirrors `backToIdle`.
@@ -135,7 +166,11 @@ struct TrackerLogic {
     }
 
     /// Apply a motion-state-machine event, updating the hold phase.
-    /// Mirrors the `switch event` block inside `ViewModel.processMotion`.
+    ///
+    /// - `.enteredPaused` keeps `holdSeconds`: whether the set survives depends
+    ///   on how long the user is off the bar, which is only known at resume.
+    /// - `.resumedActive(gap:)` continues the SAME set after a short regrip
+    ///   (gap ≤ `regripGraceSeconds`) and starts a fresh set after real rest.
     mutating func apply(event: MotionStateMachine.Event) {
         switch event {
         case .enteredActive:
@@ -143,9 +178,13 @@ struct TrackerLogic {
             detectSeconds = 0
         case .enteredPaused:
             holdPhase = .waiting
-        case .resumedActive:
-            holdPhase = .detecting
-            detectSeconds = 0
+        case .resumedActive(let gap):
+            if gap <= TrackerLogic.regripGraceSeconds {
+                holdPhase = .holding
+            } else {
+                holdPhase = .detecting
+                detectSeconds = 0
+            }
         }
     }
 
@@ -180,12 +219,12 @@ struct TrackerLogic {
         return false
     }
 
-    /// Progress percentage (0–100) for the current hold phase.
-    /// Mirrors `ViewModel.progress` exactly.
+    /// Progress percentage (0–100) for the current hold phase. Clamped at 100
+    /// for the detecting settle tick so presentation code never sees > 100.
     var progress: Double {
         switch holdPhase {
         case .detecting:
-            return Double(detectSeconds) / Double(TrackerLogic.detectThreshold) * 100
+            return min(Double(detectSeconds) / Double(max(TrackerLogic.detectThreshold, 1)), 1) * 100
         case .holding:
             return Double(holdSeconds) / Double(TrackerLogic.targetHoldSeconds) * 100
         case .waiting:

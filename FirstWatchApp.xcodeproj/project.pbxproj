@@ -28,7 +28,11 @@
 		7C82FA0230000001005C0E74 /* MotionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0130000001005C0E74 /* MotionStateMachine.swift */; };
 		7C82FA0330000001005C0E74 /* MotionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0130000001005C0E74 /* MotionStateMachine.swift */; };
 		7C82FA0530000001005C0E74 /* MotionStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */; };
-		7C82FA0730000001005C0E74 /* PullUpTrackerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */; };
+		7C82FB5130000001005C0E74 /* SessionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB5030000001005C0E74 /* SessionEngine.swift */; };
+		7C82FB5230000001005C0E74 /* SessionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB5030000001005C0E74 /* SessionEngine.swift */; };
+		7C82FB5430000001005C0E74 /* MotionSimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB5330000001005C0E74 /* MotionSimulator.swift */; };
+		7C82FB5630000001005C0E74 /* SessionEngineE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB5530000001005C0E74 /* SessionEngineE2ETests.swift */; };
+		7C82FB5830000001005C0E74 /* SyncAndRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB5730000001005C0E74 /* SyncAndRecoveryTests.swift */; };
 		7C82FB0230000001005C0E74 /* TrackerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0130000001005C0E74 /* TrackerLogic.swift */; };
 		7C82FB0330000001005C0E74 /* TrackerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0130000001005C0E74 /* TrackerLogic.swift */; };
 		7C82FB0630000001005C0E74 /* TrackerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */; };
@@ -143,8 +147,11 @@
 		7C82F8D72F664202005C0E74 /* PullUpTrackerHostingController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PullUpTrackerHostingController.swift; sourceTree = "<group>"; };
 		7C82FA0130000001005C0E74 /* MotionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStateMachine.swift; sourceTree = "<group>"; };
 		7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStateMachineTests.swift; sourceTree = "<group>"; };
-		7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullUpTrackerViewTests.swift; sourceTree = "<group>"; };
 		7C82FB0130000001005C0E74 /* TrackerLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLogic.swift; sourceTree = "<group>"; };
+		7C82FB5030000001005C0E74 /* SessionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEngine.swift; sourceTree = "<group>"; };
+		7C82FB5330000001005C0E74 /* MotionSimulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionSimulator.swift; sourceTree = "<group>"; };
+		7C82FB5530000001005C0E74 /* SessionEngineE2ETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEngineE2ETests.swift; sourceTree = "<group>"; };
+		7C82FB5730000001005C0E74 /* SyncAndRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncAndRecoveryTests.swift; sourceTree = "<group>"; };
 		7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLogicTests.swift; sourceTree = "<group>"; };
 		7C82FB0830000001005C0E74 /* HangSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSession.swift; sourceTree = "<group>"; };
 		7C82FB0B30000001005C0E74 /* HangSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSessionStore.swift; sourceTree = "<group>"; };
@@ -253,8 +260,10 @@
 			173B7DD120078D490016900C /* FirstWatchAppTests.swift */,
 		7C82F8DB30000001005C0E74 /* PullUpTrackerGoldenTests.swift */,
 		7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */,
-		7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */,
 		7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */,
+		7C82FB5330000001005C0E74 /* MotionSimulator.swift */,
+		7C82FB5530000001005C0E74 /* SessionEngineE2ETests.swift */,
+		7C82FB5730000001005C0E74 /* SyncAndRecoveryTests.swift */,
 		7C82FB0E30000001005C0E74 /* HangSessionStoreTests.swift */,
 		7C82FB1D30000001005C0E74 /* HangStatsTests.swift */,
 		7C82FB3730000001005C0E74 /* HangGrowthTests.swift */,
@@ -298,6 +307,7 @@
 			isa = PBXGroup;
 			children = (
 				7C82FB0130000001005C0E74 /* TrackerLogic.swift */,
+				7C82FB5030000001005C0E74 /* SessionEngine.swift */,
 				7C82FB0830000001005C0E74 /* HangSession.swift */,
 				7C82FB0B30000001005C0E74 /* HangSessionStore.swift */,
 				7C82FB1030000001005C0E74 /* HangStats.swift */,
@@ -482,6 +492,7 @@
 				173B7DBD20078D490016900C /* AppDelegate.swift in Sources */,
 				7C82FA0230000001005C0E74 /* MotionStateMachine.swift in Sources */,
 				7C82FB0230000001005C0E74 /* TrackerLogic.swift in Sources */,
+				7C82FB5130000001005C0E74 /* SessionEngine.swift in Sources */,
 				7C82FB0930000001005C0E74 /* HangSession.swift in Sources */,
 				7C82FB0C30000001005C0E74 /* HangSessionStore.swift in Sources */,
 				7C82FB1130000001005C0E74 /* HangStats.swift in Sources */,
@@ -511,8 +522,10 @@
 				173B7DD220078D490016900C /* FirstWatchAppTests.swift in Sources */,
 				7C82F8DA30000001005C0E74 /* PullUpTrackerGoldenTests.swift in Sources */,
 				7C82FA0530000001005C0E74 /* MotionStateMachineTests.swift in Sources */,
-				7C82FA0730000001005C0E74 /* PullUpTrackerViewTests.swift in Sources */,
 				7C82FB0630000001005C0E74 /* TrackerLogicTests.swift in Sources */,
+				7C82FB5430000001005C0E74 /* MotionSimulator.swift in Sources */,
+				7C82FB5630000001005C0E74 /* SessionEngineE2ETests.swift in Sources */,
+				7C82FB5830000001005C0E74 /* SyncAndRecoveryTests.swift in Sources */,
 				7C82FB0F30000001005C0E74 /* HangSessionStoreTests.swift in Sources */,
 				7C82FB1E30000001005C0E74 /* HangStatsTests.swift in Sources */,
 				7C82FB3830000001005C0E74 /* HangGrowthTests.swift in Sources */,
@@ -534,6 +547,7 @@
 				7C82F8D92F664202005C0E74 /* PullUpTrackerHostingController.swift in Sources */,
 				7C82FA0330000001005C0E74 /* MotionStateMachine.swift in Sources */,
 				7C82FB0330000001005C0E74 /* TrackerLogic.swift in Sources */,
+				7C82FB5230000001005C0E74 /* SessionEngine.swift in Sources */,
 				7C82FB0A30000001005C0E74 /* HangSession.swift in Sources */,
 				7C82FB0D30000001005C0E74 /* HangSessionStore.swift in Sources */,
 				7C82FB1230000001005C0E74 /* HangStats.swift in Sources */,

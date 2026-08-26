@@ -56,140 +56,170 @@ class PullUpTrackerViewModel: ObservableObject {
     @Published var debugState: String = "idle"
     @Published var debugAccelStatus: String = "not started"
     private var debugCounter = 0
+    private var lastDebugState: String = ""
     #endif
 
-    /// Single source of truth for the platform-independent counting pipeline.
-    /// The `@Published` properties above are kept in sync with this value type
-    /// via `syncPublished()`. The pure logic is unit-tested independently
-    /// (see `TrackerLogicTests`) so the ViewModel only needs to wire platform
-    /// pieces (CoreMotion, HealthKit, haptics) onto it.
-    private var logic = TrackerLogic()
+    /// Pure orchestration core (countdown + motion pipeline + counting). This
+    /// same engine drives the E2E tests, so what the simulator verifies is what
+    /// the watch runs. This ViewModel is only the platform adapter: CoreMotion,
+    /// HealthKit, haptics, persistence, WatchConnectivity.
+    private var engine: SessionEngine
+    private let poseStore: HangPoseProfileStore
 
     private let motionManager = CMMotionManager()
-    private var stateMachine = MotionStateMachine()
-
-    private var countTimer: Timer?
 
     private let healthStore = HKHealthStore()
     private var workoutSession: HKWorkoutSession?
+    private var workoutStartDate: Date?
+    /// Authorization is requested once per launch, at app start — never
+    /// mid-countdown (the old flow popped the HealthKit sheet exactly when the
+    /// user was grabbing the bar).
+    private var didRequestHealthAuth = false
 
     /// Persists every completed session so the phone can show history/growth.
     /// Injectable so tests can swap in an isolated store.
-    var sessionStore: HangSessionStore = HangSessionStore()
+    var sessionStore: HangSessionStore
+
+    /// Injectable UserDefaults for the crash-recovery draft.
+    var draftDefaults: UserDefaults
 
     var playHaptic: (WKHapticType) -> Void = { WKInterfaceDevice.current().play($0) }
 
     var progress: Double {
-        logic.progress
+        engine.logic.progress
     }
 
-    private func startWorkoutSession() {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
+    init(sessionStore: HangSessionStore = HangSessionStore(),
+         poseStore: HangPoseProfileStore = HangPoseProfileStore(),
+         draftDefaults: UserDefaults = .standard) {
+        self.sessionStore = sessionStore
+        self.poseStore = poseStore
+        self.draftDefaults = draftDefaults
+        self.engine = SessionEngine(poseProfile: poseStore.load() ?? .default)
+        // Crash recovery: a leftover draft means the app died mid-session —
+        // turn it into a completed session instead of silently dropping it.
+        if let restored = HangSessionDraft.restore(into: sessionStore, defaults: draftDefaults) {
+            pushToPhone(restored)
+        }
+        syncPublished(force: true)
+    }
 
+    // MARK: - HealthKit
+
+    /// Called once when the app appears. Prompts for HealthKit write access
+    /// BEFORE any session starts, so the system sheet never collides with the
+    /// 3-2-1 countdown. If the user denies, sessions still work — they just
+    /// don't get recorded to Health or benefit from workout background running.
+    func prepareHealthKit() {
+        guard !didRequestHealthAuth else { return }
+        didRequestHealthAuth = true
+        guard HKHealthStore.isHealthDataAvailable() else { return }
         let typesToShare: Set = [HKObjectType.workoutType()]
-        healthStore.requestAuthorization(toShare: typesToShare, read: nil) { success, _ in
-            DispatchQueue.main.async {
-                if success { self.beginWorkoutSession() }
+        healthStore.requestAuthorization(toShare: typesToShare, read: nil) { _, _ in }
+    }
+
+    /// Start the background workout session ONLY if authorization was already
+    /// granted. Never prompts — no system sheet mid-session.
+    private func beginWorkoutSessionIfAuthorized() {
+        guard HKHealthStore.isHealthDataAvailable(),
+              healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized
+        else { return }
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .traditionalStrengthTraining
+        configuration.locationType = .indoor
+        do {
+            workoutSession = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            workoutSession?.startActivity(with: Date())
+            workoutStartDate = Date()
+        } catch { }
+    }
+
+    /// End the workout session and — unlike the old code, which requested
+    /// HealthKit permission and then wrote NOTHING — actually save an
+    /// HKWorkout with the hang stats as metadata, so the permission finally
+    /// buys the user a real Health record. Pass `record: false` when the
+    /// workout produced nothing (e.g. a cancelled countdown) so Health isn't
+    /// polluted with zero-length workouts.
+    private func stopWorkoutSessionAndRecord(reps: Int, totalSeconds: Int, record: Bool = true) {
+        guard let session = workoutSession else { return }
+        let start = workoutStartDate ?? Date()
+        let end = Date()
+        session.end()
+        workoutSession = nil
+        workoutStartDate = nil
+        guard record else { return }
+        recordHangWorkout(start: start, end: end, reps: reps, totalSeconds: totalSeconds)
+    }
+
+    private func recordHangWorkout(start: Date, end: Date, reps: Int, totalSeconds: Int) {
+        guard HKHealthStore.isHealthDataAvailable(),
+              healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized
+        else { return }
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .traditionalStrengthTraining
+        configuration.locationType = .indoor
+        let builder = HKWorkoutBuilder(healthStore: healthStore,
+                                       configuration: configuration,
+                                       device: .local())
+        builder.beginCollection(withStart: start) { ok, _ in
+            guard ok else { return }
+            let metadata: [String: Any] = [
+                "williamyorkl.hangtracker.reps": NSNumber(value: reps),
+                "williamyorkl.hangtracker.hangSeconds": NSNumber(value: totalSeconds),
+            ]
+            builder.addMetadata(metadata) { _, _ in
+                builder.endCollection(withEnd: end) { _, _ in
+                    builder.finishWorkout { _, _ in }
+                }
             }
         }
     }
 
-    private func beginWorkoutSession() {
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .traditionalStrengthTraining
-        configuration.locationType = .indoor
+    // MARK: - Session control
 
-        do {
-            workoutSession = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-            workoutSession?.startActivity(with: Date())
-        } catch { }
-    }
-
-    private func stopWorkoutSession() {
-        guard let session = workoutSession else { return }
-        session.end()
-        workoutSession = nil
-    }
-
-    func startSession() {
-        guard sessionState != .active else { return }
-        logic.startSession()
-        stateMachine.reset()
-        showHint = true
-        isUserPaused = false
-        syncPublished()
-
-        print("🔴 [PullUp] startSession called")
-        startWorkoutSession()
-        startAccelerometers()
-        startCountTimer()
-    }
-
-    /// UI entry point from the Idle "Start" button. Begins the 3-2-1 countdown
-    /// so the user has time to grab the bar before motion detection kicks in.
-    /// When the countdown elapses, `updateTimer()` transitions into `.active`.
     func beginSession() {
         guard sessionState == .idle else { return }
-        logic.startCountdown()
-        stateMachine.reset()
-        showHint = true
-        isUserPaused = false
-        syncPublished()
-
+        apply(engine.begin())
         print("🔴 [PullUp] beginSession (countdown) called")
-        startWorkoutSession()
+        beginWorkoutSessionIfAuthorized()
         startAccelerometers()
         startCountTimer()
-        playHaptic(.start)
     }
 
     /// "Again" from the Summary screen: start a fresh countdown session
     /// (counters reset). Lets the user chain sets without going back to idle.
     func repeatSession() {
         guard sessionState == .summary else { return }
-        stopWorkoutSession()           // end the previous workout before starting fresh
-        logic.startCountdown()
-        stateMachine.reset()
-        showHint = true
-        isUserPaused = false
-        syncPublished()
-
-        startWorkoutSession()
+        apply(engine.begin())
+        beginWorkoutSessionIfAuthorized()
         startAccelerometers()
         startCountTimer()
-        playHaptic(.start)
     }
 
-    /// Abort the countdown (e.g. user taps cancel during 3-2-1).
+    /// Abort the countdown (user backed out) — now wired to a Cancel button
+    /// on the countdown screen (previously dead code with no UI).
     func cancelCountdown() {
-        logic.cancelCountdown()
-        syncPublished()
+        apply(engine.cancel())
         motionManager.stopAccelerometerUpdates()
         stopCountTimer()
-        stopWorkoutSession()
+        stopWorkoutSessionAndRecord(reps: 0, totalSeconds: 0, record: false)
     }
 
     func endSession() {
-        // Persist the session before resetting, but only if something was
-        // actually achieved — an accidental immediate end shouldn't write a
-        // zero-length record into the history.
-        if logic.totalHoldTime > 0 {
-            let session = HangSession(reps: logic.reps, totalSeconds: logic.totalHoldTime)
-            sessionStore.append(session)
-            pushToPhone(session)
-        }
-        logic.endSession()
-        isUserPaused = false
-        syncPublished()
+        let snapshot = engine.snapshot()
+        apply(engine.end())
         motionManager.stopAccelerometerUpdates()
         stopCountTimer()
-        stopWorkoutSession()
+        stopWorkoutSessionAndRecord(reps: snapshot.reps, totalSeconds: snapshot.totalHoldTime)
     }
 
     /// Push a completed session to the phone via WatchConnectivity so the
-    /// phone's history/stats update without manual sync. Uses
-    /// `updateApplicationContext`, which is buffered and delivered when the
-    /// phone is reachable (best-effort; the phone also keeps its own copy).
+    /// phone's history/stats update without manual sync.
+    ///
+    /// Uses `updateUserInfo` (FIFO QUEUE, guaranteed delivery of every item)
+    /// instead of the old `updateApplicationContext` (latest-wins snapshot):
+    /// if the phone was unreachable, completing sessions S1 then S2 used to
+    /// silently DROP S1 — its context was overwritten before delivery.
     private func pushToPhone(_ session: HangSession) {
         guard WCSession.isSupported() else { return }
         let wc = WCSession.default
@@ -198,49 +228,39 @@ class PullUpTrackerViewModel: ObservableObject {
             let data = try? JSONEncoder().encode(session),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
-        try? wc.updateApplicationContext([HangConnectivity.sessionKey: object])
+        try? wc.transferUserInfo([HangConnectivity.sessionKey: object])
     }
 
     /// User-initiated pause: stop the timer and motion detection but KEEP all
-    /// counters so the session can resume. This is distinct from `endSession`,
-    /// which finalises into the summary. Previously the "pause" button called
-    /// `endSession`, so a user expecting to resume would silently lose their
-    /// progress — this fixes that.
+    /// counters so the session can resume.
     func pauseSession() {
-        guard sessionState == .active, !isUserPaused else { return }
-        isUserPaused = true
+        apply(engine.pauseUser())
         stopCountTimer()
         motionManager.stopAccelerometerUpdates()
-        // Leave the workout session running so background health tracking stays
-        // alive during a brief pause; it is ended by endSession/backToIdle.
-        holdState = .waiting
-        playHaptic(.stop)
         print("🔴 [PullUp] pauseSession (resumable)")
     }
 
-    /// Resume after a user-initiated pause. Restarts the timer and motion
-    /// pipeline; counting resumes once the state machine re-confirms the pose.
+    /// Resume after a user-initiated pause. The engine re-enters detection if
+    /// motion is still confirmed active, so counters can't strand in waiting.
     func resumeSession() {
-        guard sessionState == .active, isUserPaused else { return }
-        isUserPaused = false
+        apply(engine.resumeUser())
         startAccelerometers()
         startCountTimer()
-        playHaptic(.start)
         print("🔴 [PullUp] resumeSession")
     }
 
     func backToIdle() {
-        logic.backToIdle()
-        isUserPaused = false
-        syncPublished()
+        apply(engine.backToIdle())
         motionManager.stopAccelerometerUpdates()
         stopCountTimer()
-        stopWorkoutSession()
+        stopWorkoutSessionAndRecord(reps: 0, totalSeconds: 0)
     }
 
     func dismissHint() {
         showHint = false
     }
+
+    // MARK: - Timer & motion wiring
 
     private func startCountTimer() {
         countTimer?.invalidate()
@@ -250,32 +270,15 @@ class PullUpTrackerViewModel: ObservableObject {
         RunLoop.current.add(countTimer!, forMode: .common)
     }
 
-    func stopCountTimer() {
+    private var countTimer: Timer?
+
+    private func stopCountTimer() {
         countTimer?.invalidate()
         countTimer = nil
     }
 
     func updateTimer() {
-        // During countdown, the 1-second timer drives the 3-2-1 numbers; once it
-        // hits zero we transition into the active session (motion pipeline was
-        // already armed in beginSession).
-        if logic.sessionPhase == .countdown {
-            let reachedZero = logic.tickCountdown()
-            if reachedZero {
-                logic.finishCountdown()
-                playHaptic(.start)
-            } else {
-                playHaptic(.click)
-            }
-            syncPublished()
-            return
-        }
-
-        let repCompleted = logic.tick(motionIsActive: stateMachine.state == .active)
-        if repCompleted {
-            celebrateRep()
-        }
-        syncPublished()
+        apply(engine.secondTick())
     }
 
     private func celebrateRep() {
@@ -288,7 +291,6 @@ class PullUpTrackerViewModel: ObservableObject {
     private func startAccelerometers() {
         motionManager.stopAccelerometerUpdates()
         let isAvailable = motionManager.isAccelerometerAvailable
-        print("🔴 [PullUp] startAccelerometers — isAccelerometerAvailable: \(isAvailable)")
 
         guard isAvailable else {
             #if DEBUG
@@ -302,15 +304,11 @@ class PullUpTrackerViewModel: ObservableObject {
 
         motionManager.accelerometerUpdateInterval = 1.0 / 60.0
         motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
-            guard let data = data, let self = self else {
-                print("🔴 [PullUp] accel callback: data=nil or self=nil")
-                return
-            }
+            guard let data = data, let self = self else { return }
             self.processMotion(x: data.acceleration.x,
                                y: data.acceleration.y,
                                z: data.acceleration.z)
         }
-        print("🔴 [PullUp] accelerometer updates started, interval: \(motionManager.accelerometerUpdateInterval)")
     }
 
     func processMotion(x: Double, y: Double, z: Double, at timestamp: Date = Date()) {
@@ -320,43 +318,67 @@ class PullUpTrackerViewModel: ObservableObject {
             debugX = x
             debugY = y
             debugZ = z
-            debugState = String(describing: stateMachine.state)
-        }
-        #endif
-
-        let prevState = stateMachine.state
-        let events = stateMachine.process(x: x, y: y, z: z, at: timestamp)
-
-        #if DEBUG
-        if debugCounter % 60 == 0 {
-            let mag = (x * x + y * y + z * z).squareRoot()
-            print("🔴 [PullUp] X:\(String(format: "%.2f", x)) Y:\(String(format: "%.2f", y)) Z:\(String(format: "%.2f", z)) |mag|:\(String(format: "%.2f", mag)) state:\(prevState)")
-        }
-        #endif
-
-        for event in events {
-            print("🔴 [PullUp] EVENT: \(event)")
-            logic.apply(event: event)
-            switch event {
-            case .enteredActive, .resumedActive:
-                playHaptic(.start)
-            case .enteredPaused:
-                playHaptic(.stop)
+            let stateName = String(describing: engine.stateMachine.state)
+            if stateName != lastDebugState {
+                debugState = stateName
+                lastDebugState = stateName
             }
         }
-        syncPublished()
+        #endif
+
+        apply(engine.motionSample(x: x, y: y, z: z, at: timestamp))
     }
 
-    /// Push the pure-logic state back onto the SwiftUI-observed `@Published`
-    /// properties. Centralised here so every mutation path stays consistent.
-    private func syncPublished() {
-        sessionState = TrackerSessionState(logic.sessionPhase)
-        holdState = TrackerHoldState(logic.holdPhase)
-        detectSeconds = logic.detectSeconds
-        holdSeconds = logic.holdSeconds
-        totalHoldTime = logic.totalHoldTime
-        reps = logic.reps
-        countdownValue = logic.countdownValue
+    // MARK: - Signal application
+
+    private func apply(_ signals: [SessionEngine.Signal]) {
+        for signal in signals {
+            switch signal {
+            case .haptic(let kind):
+                playHaptic(Self.hapticMap[kind] ?? .click)
+            case .repCompleted:
+                celebrateRep()
+            case .stateChanged:
+                // The engine only emits this when observable values actually
+                // changed, so the UI refreshes at most ~1 Hz while counting —
+                // not at the 60 Hz accelerometer rate.
+                syncPublished()
+            case .draftUpdated(let draft):
+                draft.save(to: draftDefaults)
+            case .draftCleared:
+                HangSessionDraft.clear(in: draftDefaults)
+            case .sessionCompleted(let session):
+                sessionStore.append(session)
+                pushToPhone(session)
+                HangSessionDraft.clear(in: draftDefaults)
+            case .poseLearned(let gravity):
+                poseStore.save(HangPoseProfile(hangGravity: gravity))
+            }
+        }
+    }
+
+    private static let hapticMap: [SessionEngine.HapticKind: WKHapticType] = [
+        .click: .click,
+        .start: .start,
+        .stop: .stop,
+        .success: .success,
+    ]
+
+    /// Push the engine snapshot onto the SwiftUI-observed properties. Guarded
+    /// assignment: `@Published` fires `objectWillChange` on EVERY assignment,
+    /// even when the value is unchanged — so only assign on real changes.
+    private func syncPublished(force: Bool = false) {
+        let s = engine.snapshot()
+        let newState = TrackerSessionState(s.sessionPhase)
+        if force || sessionState != newState { sessionState = newState }
+        let newHold = TrackerHoldState(s.holdPhase)
+        if force || holdState != newHold { holdState = newHold }
+        if force || detectSeconds != s.detectSeconds { detectSeconds = s.detectSeconds }
+        if force || holdSeconds != s.holdSeconds { holdSeconds = s.holdSeconds }
+        if force || totalHoldTime != s.totalHoldTime { totalHoldTime = s.totalHoldTime }
+        if force || reps != s.reps { reps = s.reps }
+        if force || countdownValue != s.countdownValue { countdownValue = s.countdownValue }
+        if force || isUserPaused != s.isUserPaused { isUserPaused = s.isUserPaused }
     }
 }
 
@@ -463,6 +485,7 @@ struct PullUpTrackerView: View {
                 case .countdown:
                     CountdownView(
                         value: viewModel.countdownValue,
+                        onCancel: viewModel.cancelCountdown,
                         reduceMotion: reduceMotion
                     )
                     .opacity(contentOpacity)
@@ -521,6 +544,9 @@ struct PullUpTrackerView: View {
         }
         #endif
         .onAppear {
+            // Request HealthKit access up front so the system permission sheet
+            // never interrupts the 3-2-1 countdown mid-session.
+            viewModel.prepareHealthKit()
             if reduceMotion {
                 contentOpacity = 1.0
                 contentScale = 1.0
@@ -703,14 +729,15 @@ struct ActiveView: View {
     private var phaseLabelText: LocalizedStringKey {
         switch holdState {
         case .waiting:
-            // waiting = wrist not yet raised for long enough; tell the user what
-            // to DO, not what the machine is doing. The old label "Detecting"
-            // implied counting had started, which was misleading.
-            return "Raise Wrist"
+            // Instruction for the user's NEXT action, valid both before the
+            // first grab and after a drop: get on the bar. ("Raise Wrist"
+            // was misleading once they were already hanging.)
+            return "Grab the Bar"
         case .detecting:
-            // Motion is being confirmed as a stable hang. No countdown number is
-            // shown here (only this prompt) so it doesn't read as a second 3-2-1.
-            return "Hold Still\nStarting soon"
+            // ~1 s settle window after the pose is confirmed. The ring now
+            // fills during this phase, so the user SEES confirmation working
+            // instead of a static prompt.
+            return "Locked On\nStarting…"
         case .holding:
             return "Keep Going!"
         }
@@ -722,9 +749,9 @@ struct ActiveView: View {
     private var centerAccessibilityLabel: String {
         switch holdState {
         case .waiting:
-            return "Raise your wrist to start"
+            return "Grab the bar to start counting"
         case .detecting:
-            return "Hold still, motion is being confirmed, starting soon"
+            return "Hang confirmed, starting soon"
         case .holding:
             return "Holding, \(holdSeconds) of \(TrackerLogic.targetHoldSeconds) seconds"
         }
@@ -771,12 +798,11 @@ struct ActiveView: View {
                                 waitingRingRotation = 360
                             }
                         }
-                } else if holdState == .holding {
-                    // Only the holding phase draws a progress arc. During
-                    // `.detecting` the ring stays bare (just the track) so it
-                    // doesn't look like a second countdown racing the 3-2-1 —
-                    // the motion-detection stability window still runs under the
-                    // hood, but it presents as a calm "hold still" prompt.
+                } else if holdState != .waiting {
+                    // The ring fills during BOTH the ~1 s settle window
+                    // (detecting) and the hold itself, so the user always sees
+                    // confirmation progress instead of a bare track while the
+                    // machine is deciding.
                     Circle()
                         .trim(from: 0, to: ringProgress)
                         .stroke(
@@ -807,11 +833,9 @@ struct ActiveView: View {
                             }
                         }
                     case .detecting:
-                        // Motion is being validated but we show NO number here
-                        // — only a calm prompt — so it can't be mistaken for a
-                        // second countdown competing with the 3-2-1. The
-                        // detection window still runs (detectSeconds ticks up in
-                        // TrackerLogic) to confirm a stable hanging pose.
+                        // The hang pose is confirmed; the ring fills while the
+                        // ~1 s settle tick elapses, giving visible feedback that
+                        // detection worked and counting is about to start.
                         VStack(spacing: ringDiameter * 0.03) {
                             Image(systemName: "hand.raised.fill")
                                 .font(.system(size: waitingIconSize, weight: .semibold))
@@ -1139,6 +1163,7 @@ struct SummaryView: View {
 // without looking.
 struct CountdownView: View {
     let value: Int
+    let onCancel: () -> Void
     let reduceMotion: Bool
 
     @State private var pulseScale: CGFloat = 1.0
@@ -1163,6 +1188,23 @@ struct CountdownView: View {
                         .scaleEffect(pulseScale)
                         .contentTransition(.opacity)
                         .accessibilityLabel("\(max(value, 0))")
+
+                    // One-tap exit from a mis-started countdown. Previously
+                    // cancelCountdown() existed but nothing called it — users
+                    // had to ride out the countdown, then pause-menu → End →
+                    // Done to back out of an accidental Start.
+                    Button(action: onCancel) {
+                        Text("Cancel")
+                            .font(.system(size: geometry.size.width * 0.042,
+                                          weight: .semibold, design: .rounded))
+                            .foregroundColor(Color.white.opacity(0.75))
+                            .padding(.horizontal, geometry.size.width * 0.08)
+                            .padding(.vertical, geometry.size.height * 0.014)
+                            .background(Color.white.opacity(0.12))
+                            .cornerRadius(geometry.size.height * 0.03)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .accessibilityLabel("Cancel countdown")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

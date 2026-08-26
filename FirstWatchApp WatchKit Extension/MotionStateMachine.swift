@@ -1,27 +1,69 @@
 import Foundation
 
-/// Pure-motion state machine for the pull-up tracker.
+/// A 3-axis vector plus the small amount of math the pose detection needs.
+/// `Codable` so a learned pose reference can be persisted between sessions.
+struct GravityVector: Equatable, Codable {
+    var x: Double
+    var y: Double
+    var z: Double
+
+    init(_ x: Double, _ y: Double, _ z: Double) {
+        self.x = x
+        self.y = y
+        self.z = z
+    }
+
+    var magnitude: Double {
+        (x * x + y * y + z * z).squareRoot()
+    }
+
+    func normalized() -> GravityVector {
+        let m = magnitude
+        guard m > 1e-9 else { return self }
+        return GravityVector(x / m, y / m, z / m)
+    }
+
+    func dot(_ other: GravityVector) -> Double {
+        x * other.x + y * other.y + z * other.z
+    }
+
+    /// Angle to another vector in degrees (0–180). Degenerate (zero-length)
+    /// vectors report 180° — "maximally unlike" — so they can never match.
+    func angle(to other: GravityVector) -> Double {
+        let m1 = magnitude
+        let m2 = other.magnitude
+        guard m1 > 1e-9, m2 > 1e-9 else { return 180 }
+        let cos = dot(other) / (m1 * m2)
+        return acos(max(-1, min(1, cos))) * 180 / .pi
+    }
+
+    static let zero = GravityVector(0, 0, 0)
+}
+
+/// Pure-motion state machine for the hang tracker.
 ///
-/// This struct has **zero platform dependencies** (no CoreMotion, WatchKit,
-/// SwiftUI or UIKit) so it can be compiled into both the watchOS extension
-/// target and the iOS host-app target, making it fully unit-testable from
-/// `FirstWatchAppTests` via `@testable import FirstWatchApp`.
-///
-/// The state flow mirrors the product spec:
+/// Zero platform dependencies (no CoreMotion, WatchKit, SwiftUI or UIKit) so it
+/// compiles into the watchOS extension, the iOS app and the test target.
 ///
 ///     idle → detecting → confirmed → active ⇄ paused
-///                                         ↓
-///                                    (arm down → idle)
 ///
-/// - `.detecting`: wrist has been raised; accumulate `detectingDuration` of
-///   stable hanging-pose readings before trusting the gesture.
-/// - `.confirmed`: short re-validation window (`confirmedDuration`) to reject
-///   transient flickers.
-/// - `.active`: arm is up; the ViewModel's count-timer is allowed to tick.
-/// - `.paused`: arm was lowered; counting pauses until the wrist is raised
-///   again (`pausedResumeDuration` of stable hanging pose resumes to `.active`).
-///   If the arm stays down the machine falls back to `.idle`, forcing a full
-///   re-detection on the next raise (per spec: "计数器重新开始").
+/// Pose detection is **reference-based**, not axis-hardcoded: the machine is
+/// initialised with (or learns) the gravity direction the accelerometer reads
+/// *while this particular user hangs from a bar in their particular wearing
+/// style* — left/right wrist, crown side, grip rotation all fold into that one
+/// learned vector. A reading counts as "hanging" when the smoothed gravity
+/// stays within `hangAngleTolerance` of that reference. This replaces the old
+/// `x < -0.7 && xDominant` predicate, which only worked for one specific
+/// wrist/crown/grip combination.
+///
+/// Robustness rules:
+/// - Pause is **debounced**: leaving `.active` requires the pose to be clearly
+///   not-hanging (or unstable) continuously for `pauseDebounceDuration`, so a
+///   single noisy sample or a brief sway spike cannot kill the current set.
+/// - Resume from `.paused` requires a *contiguous* run of hanging samples, so
+///   one flicker doesn't restart counting.
+/// - `.paused` is terminal within a session (no idle fallback): rest between
+///   sets is a normal part of a session; only the session itself ends it.
 struct MotionStateMachine {
 
     // MARK: - Types
@@ -34,50 +76,131 @@ struct MotionStateMachine {
         case paused
     }
 
-    /// Side-effecting transitions the ViewModel reacts to (haptics, hold-state, etc.).
+    /// Side-effecting transitions the caller reacts to (haptics, hold-state).
+    /// `resumedActive` carries the pause `gap` so the counting logic can decide
+    /// between "quick regrip — continue the current set" and "real rest —
+    /// start a fresh set".
     enum Event: Equatable {
-        case enteredActive   // confirmed → active   : hand-raise accepted, start counting
-        case enteredPaused   // active   → paused     : arm lowered, pause counting
-        case resumedActive   // paused   → active     : re-raised, resume counting
+        case enteredActive
+        case enteredPaused
+        case resumedActive(gap: TimeInterval)
     }
 
     // MARK: - Configuration
 
-    private let windowSize: Int
-    private let baselineMagnitude: Double
-    private let magnitudeThreshold: Double
-    private let detectingDuration: TimeInterval
-    private let confirmedDuration: TimeInterval
-    private let pausedResumeDuration: TimeInterval
+    /// Smoothed-gravity window (≈0.2 s at 60 Hz).
+    let windowSize: Int
+    /// |length(averaged vector) − 1 G| must stay below this to count as stable.
+    /// Averaging first makes dynamic spikes cancel out; a shaken or swinging
+    /// wrist shrinks the averaged vector length below the band.
+    let magnitudeTolerance: Double
+    /// Angle to the hang reference within which a stable reading is a hang.
+    let hangAngleTolerance: Double
+    /// Angle beyond which a stable reading is clearly NOT a hang (hysteresis
+    /// band between the two prevents flapping).
+    let pauseAngleTolerance: Double
+    let detectingDuration: TimeInterval
+    let confirmedDuration: TimeInterval
+    let pausedResumeDuration: TimeInterval
+    /// Sustained clearly-not-hang time required before `enteredPaused` fires.
+    let pauseDebounceDuration: TimeInterval
+    /// How long a *stable* pose in any direction must persist before it can be
+    /// adopted as a new hang reference (self-healing bootstrap for a wearing
+    /// style the stored reference doesn't match).
+    let adoptionStabilityDuration: TimeInterval
+    /// Poses within this angle of `initialPoseGate` are NOT hanging. See below.
+    let gateAngleTolerance: Double
+
+    /// The gravity direction this session STARTED in (the user's arm at rest
+    /// when they tapped Start), captured once stable during the countdown.
+    ///
+    /// Why: a static reading cannot distinguish "hanging" from "arm at side"
+    /// for every wearing style — e.g. a mirrored-wrist user's RESTING pose
+    /// reads nearly the same as the default hang reference. Blocking the
+    /// session's starting pose (until the user demonstrably leaves it) kills
+    /// that false start without needing to tell the two apart.
+    private(set) var initialPoseGate: GravityVector?
+
+    /// The gravity direction that means "hanging" for this user/device.
+    private(set) var hangReference: GravityVector
 
     // MARK: - Mutable State
 
     private(set) var state: State = .idle
     private var stateStartTime: Date?
-    private var slidingWindow: [Double] = []
+    private var notHangSince: Date?
+    private var hangStreakSince: Date?
+    private var stableSince: Date?
+    private var slidingWindow: [GravityVector] = []
+    /// Window-averaged gravity — the smoothed signal all decisions use.
+    private(set) var smoothedGravity: GravityVector = .zero
 
     // MARK: - Init
 
-    init(windowSize: Int = 10,
-         baselineMagnitude: Double = 1.0,
-         magnitudeThreshold: Double = 0.3,
-         detectingDuration: TimeInterval = 1.5,
-         confirmedDuration: TimeInterval = 0.5,
-         pausedResumeDuration: TimeInterval = 0.5) {
+    /// Default reference preserves the legacy behaviour (x strongly negative)
+    /// for devices/wearing styles that matched the original hard-coded axis.
+    static let defaultHangReference = GravityVector(-0.92, -0.08, -0.10).normalized()
+
+    init(hangReference: GravityVector = MotionStateMachine.defaultHangReference,
+         windowSize: Int = 12,
+         magnitudeTolerance: Double = 0.25,
+         hangAngleTolerance: Double = 45,
+         pauseAngleTolerance: Double = 70,
+         detectingDuration: TimeInterval = 0.8,
+         confirmedDuration: TimeInterval = 0.2,
+         pausedResumeDuration: TimeInterval = 0.5,
+         pauseDebounceDuration: TimeInterval = 0.4,
+         adoptionStabilityDuration: TimeInterval = 2.0,
+         gateAngleTolerance: Double = 60) {
+        self.hangReference = hangReference.normalized()
         self.windowSize = windowSize
-        self.baselineMagnitude = baselineMagnitude
-        self.magnitudeThreshold = magnitudeThreshold
+        self.magnitudeTolerance = magnitudeTolerance
+        self.hangAngleTolerance = hangAngleTolerance
+        self.pauseAngleTolerance = pauseAngleTolerance
         self.detectingDuration = detectingDuration
         self.confirmedDuration = confirmedDuration
         self.pausedResumeDuration = pausedResumeDuration
+        self.pauseDebounceDuration = pauseDebounceDuration
+        self.adoptionStabilityDuration = adoptionStabilityDuration
+        self.gateAngleTolerance = gateAngleTolerance
     }
 
     // MARK: - Reset
 
+    /// Reset session state. The learned hang reference survives (a property of
+    /// the user's wearing style); the starting-pose gate does not (a new
+    /// session starts a new pre-hang pose).
     mutating func reset() {
         state = .idle
         stateStartTime = nil
+        notHangSince = nil
+        hangStreakSince = nil
+        stableSince = nil
         slidingWindow.removeAll()
+        smoothedGravity = .zero
+        initialPoseGate = nil
+    }
+
+    // MARK: - Reference learning
+
+    /// Adopt a new hang reference (engine calls this when the user's real hang
+    /// pose is confirmed, or during the bootstrap fallback).
+    mutating func adoptHangReference(_ reference: GravityVector) {
+        hangReference = reference.normalized()
+    }
+
+    /// Arm / disarm / re-point the starting-pose gate. `nil` disables it.
+    mutating func setInitialPoseGate(_ gate: GravityVector?) {
+        initialPoseGate = gate?.normalized()
+    }
+
+    /// The current stable gravity direction if readings have been continuously
+    /// stable for at least `adoptionStabilityDuration` — candidate for a
+    /// bootstrap reference adoption when detection has failed entirely.
+    func stableGravity(at timestamp: Date) -> GravityVector? {
+        guard let since = stableSince else { return nil }
+        guard timestamp.timeIntervalSince(since) >= adoptionStabilityDuration else { return nil }
+        return smoothedGravity.normalized()
     }
 
     // MARK: - Processing
@@ -90,34 +213,59 @@ struct MotionStateMachine {
     /// - Returns: Events the caller should react to (may be empty).
     @discardableResult
     mutating func process(x: Double, y: Double, z: Double, at timestamp: Date = Date()) -> [Event] {
-        let magnitude = (x * x + y * y + z * z).squareRoot()
+        let sample = GravityVector(x, y, z)
 
-        slidingWindow.append(magnitude)
+        slidingWindow.append(sample)
         if slidingWindow.count > windowSize {
             slidingWindow.removeFirst()
         }
 
-        let avgMagnitude = slidingWindow.reduce(0, +) / Double(slidingWindow.count)
-        let magnitudeStable = abs(avgMagnitude - baselineMagnitude) < magnitudeThreshold
-        let xDominant = abs(x) > abs(y) && abs(x) > abs(z)
-        let isHangingPose = magnitudeStable && xDominant && x < -0.7
+        // Window average: direction changes (sway, spikes) partially cancel,
+        // so a near-unit-length average means "sustained, consistent reading".
+        let count = Double(slidingWindow.count)
+        let avg = slidingWindow.reduce(into: GravityVector.zero) { acc, v in
+            acc.x += v.x / count
+            acc.y += v.y / count
+            acc.z += v.z / count
+        }
+        smoothedGravity = avg
+
+        let stable = abs(avg.magnitude - 1.0) < magnitudeTolerance
+        let direction = avg.normalized()
+        let hangAngle = direction.angle(to: hangReference)
+        // The starting-pose gate: whatever the user was doing when the session
+        // began is by definition NOT a hang entered during this session. Once
+        // they leave that pose the engine clears the gate.
+        let gateBlocked = initialPoseGate.map {
+            direction.angle(to: $0) < gateAngleTolerance
+        } ?? false
+        let isHangPose = stable && hangAngle < hangAngleTolerance && !gateBlocked
+        // Unstable readings (mid-swing, grip adjustment) don't immediately mean
+        // "left the bar" either — the debounce below demands *sustained*
+        // departure before pausing.
+        let clearlyNotHang = !stable || hangAngle > pauseAngleTolerance
+
+        if stable {
+            if stableSince == nil { stableSince = timestamp }
+        } else {
+            stableSince = nil
+        }
 
         var events: [Event] = []
 
         switch state {
         case .idle:
-            if isHangingPose {
+            if isHangPose {
                 state = .detecting
                 stateStartTime = timestamp
             }
 
         case .detecting:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    if timestamp.timeIntervalSince(startTime) > detectingDuration {
-                        state = .confirmed
-                        stateStartTime = timestamp
-                    }
+            if isHangPose {
+                if let startTime = stateStartTime,
+                   timestamp.timeIntervalSince(startTime) > detectingDuration {
+                    state = .confirmed
+                    stateStartTime = timestamp
                 }
             } else {
                 state = .idle
@@ -125,13 +273,12 @@ struct MotionStateMachine {
             }
 
         case .confirmed:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    if timestamp.timeIntervalSince(startTime) > confirmedDuration {
-                        state = .active
-                        stateStartTime = nil
-                        events.append(.enteredActive)
-                    }
+            if isHangPose {
+                if let startTime = stateStartTime,
+                   timestamp.timeIntervalSince(startTime) > confirmedDuration {
+                    state = .active
+                    stateStartTime = nil
+                    events.append(.enteredActive)
                 }
             } else {
                 state = .idle
@@ -139,59 +286,56 @@ struct MotionStateMachine {
             }
 
         case .active:
-            if isArmDown(x: x, y: y, z: z) {
-                state = .paused
-                stateStartTime = timestamp
-                events.append(.enteredPaused)
+            if clearlyNotHang {
+                if notHangSince == nil { notHangSince = timestamp }
+                if timestamp.timeIntervalSince(notHangSince!) >= pauseDebounceDuration {
+                    state = .paused
+                    stateStartTime = timestamp
+                    notHangSince = nil
+                    events.append(.enteredPaused)
+                }
+            } else {
+                notHangSince = nil
             }
 
         case .paused:
-            if isHangingPose {
-                if let startTime = stateStartTime {
-                    if timestamp.timeIntervalSince(startTime) > pausedResumeDuration {
-                        state = .active
-                        stateStartTime = nil
-                        events.append(.resumedActive)
-                    }
+            if isHangPose {
+                if hangStreakSince == nil { hangStreakSince = timestamp }
+                if timestamp.timeIntervalSince(hangStreakSince!) > pausedResumeDuration,
+                   let pausedAt = stateStartTime {
+                    let gap = timestamp.timeIntervalSince(pausedAt)
+                    state = .active
+                    stateStartTime = nil
+                    hangStreakSince = nil
+                    events.append(.resumedActive(gap: gap))
                 }
             } else {
-                // Arm stayed down: fall back to idle so the next raise
-                // re-runs the full detection pipeline (spec: 计数器重新开始).
-                state = .idle
-                stateStartTime = nil
+                hangStreakSince = nil
             }
         }
 
         return events
     }
-
-    // MARK: - Helpers
-
-    private func isArmDown(x: Double, y: Double, z: Double) -> Bool {
-        let xPositiveDominant = x > 0.5 && abs(x) > abs(y) && abs(x) > abs(z)
-        let zNegativeDominant = z < -0.7 && abs(z) > abs(x) && abs(z) > abs(y)
-        return xPositiveDominant || zNegativeDominant
-    }
 }
 
 // MARK: - Test Fixtures
-
+//
+// Poses are expressed relative to the DEFAULT reference (x-negative), matching
+// the legacy behaviour, so plain `MotionStateMachine()` fixtures keep working.
 extension MotionStateMachine {
-    /// Accelerometer reading that satisfies the "hanging pose" (wrist raised) predicate.
-    /// `x` is strongly negative and dominant; overall magnitude sits near 1 G.
+    /// Accelerometer reading that satisfies the "hanging pose" predicate
+    /// against the default reference: near (-0.92, -0.08, -0.10), 1 G.
     static var hangingPose: (x: Double, y: Double, z: Double) {
         (-0.92, -0.08, -0.10)
     }
 
-    /// Accelerometer reading that satisfies the "arm down" predicate.
-    /// `x` is strongly positive and dominant.
+    /// Arm-down reading: roughly anti-parallel to the hang reference.
     static var armDownPose: (x: Double, y: Double, z: Double) {
         (0.92, 0.08, 0.10)
     }
 
-    /// Neutral reading that triggers neither hanging-pose nor arm-down.
-    /// Magnitude ≈ 0.52 (outside the 0.7–1.3 stability band) so `isHangingPose`
-    /// is guaranteed false; `x` and `z` are both weak so `isArmDown` is also false.
+    /// Neutral reading that is neither stable-hang nor clearly-arm-down:
+    /// magnitude ≈ 0.52 falls outside the stability band.
     static var neutralPose: (x: Double, y: Double, z: Double) {
         (0.3, 0.3, 0.3)
     }
