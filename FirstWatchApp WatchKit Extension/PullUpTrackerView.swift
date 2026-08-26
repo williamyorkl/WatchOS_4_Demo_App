@@ -38,6 +38,7 @@ enum TrackerHoldState {
 }
 
 class PullUpTrackerViewModel: ObservableObject {
+    // MARK: DEBUG scripted-motion driver (-demoMotion)
     @Published var sessionState: TrackerSessionState = .idle
     @Published var holdState: TrackerHoldState = .waiting
 
@@ -57,6 +58,56 @@ class PullUpTrackerViewModel: ObservableObject {
     @Published var debugAccelStatus: String = "not started"
     private var debugCounter = 0
     private var lastDebugState: String = ""
+
+    /// DEBUG-only UI driving:
+    /// `-demoMotion` — scripted physical performance replaces the accelerometer.
+    /// `-uiFixture <case>` — force-render a screen state with ticking data
+    ///   (no sensors): idle | waiting | detecting | holding | summary.
+    /// DEBUG-only deterministic screen-state driving. Launch arguments,
+    /// spawn-defaults and marker files all proved unreliable channels into the
+    /// watch extension process, so fixtures are triggered at RUNTIME instead
+    /// (long-press on the root view cycles them). This only touches presented
+    /// values — sensor/counting logic stays fully covered by unit+E2E tests.
+    private var fixtureTimer: Timer?
+    var fixtureProgressOverride: Double?
+
+    func debugStopFixture() {
+        fixtureTimer?.invalidate(); fixtureTimer = nil
+    }
+
+    func debugApplyFixture(_ modeRaw: String) {
+        debugStopFixture()
+        let mode = modeRaw.lowercased()
+        let ticking = (mode == "holding")
+        switch mode {
+        case "waiting", "detecting", "holding":
+            sessionState = .active
+            holdState = mode == "waiting" ? .waiting : (mode == "detecting" ? .detecting : .holding)
+            detectSeconds = mode == "detecting" ? 0 : TrackerLogic.detectThreshold
+            holdSeconds = 4
+            reps = 2
+            totalHoldTime = 24
+            fixtureProgressOverride = ticking
+                ? Double(holdSeconds) / Double(TrackerLogic.targetHoldSeconds) * 100
+                : (mode == "detecting" ? 60 : 40)
+            if ticking {
+                fixtureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                    guard let self = self else { return }
+                    self.holdSeconds = (self.holdSeconds + 1) % TrackerLogic.targetHoldSeconds
+                    self.totalHoldTime += 1
+                    self.fixtureProgressOverride =
+                        Double(self.holdSeconds) / Double(TrackerLogic.targetHoldSeconds) * 100
+                    if self.totalHoldTime % TrackerLogic.targetHoldSeconds == 0 { self.reps += 1 }
+                }
+                RunLoop.current.add(fixtureTimer!, forMode: .common)
+            }
+        case "summary":
+            sessionState = .summary
+        default:
+            break
+        }
+    }
+
     #endif
 
     /// Pure orchestration core (countdown + motion pipeline + counting). This
@@ -85,9 +136,13 @@ class PullUpTrackerViewModel: ObservableObject {
 
     var playHaptic: (WKHapticType) -> Void = { WKInterfaceDevice.current().play($0) }
 
-    var progress: Double {
-        engine.logic.progress
-    }
+    /// DEBUG fixture override so `-uiFixture holding` can render a live
+    /// progress arc without driving the motion pipeline.
+    #if DEBUG
+    var progress: Double { fixtureProgressOverride ?? engine.logic.progress }
+    #else
+    var progress: Double { engine.logic.progress }
+    #endif
 
     init(sessionStore: HangSessionStore = HangSessionStore(),
          poseStore: HangPoseProfileStore = HangPoseProfileStore(),
@@ -465,31 +520,56 @@ struct WatchLayoutMetrics {
 struct PullUpTrackerView: View {
     @StateObject private var viewModel = PullUpTrackerViewModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var contentOpacity: Double = 0
-    @State private var contentScale: CGFloat = 0.95
     #if DEBUG
     @State private var showDebugOverlay = false
+    @State private var fixtureIndex = -1
+    @State private var debugModeLabel: String = ""
     #endif
-    
+
+    /// System transition vocabulary: soft cross-fade with a barely-there
+    /// scale insert — how Apple's own watch apps move between states.
+    private var screenTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.96)),
+            removal: .opacity
+        )
+    }
+
     var body: some View {
         ZStack {
             Color.oledBlack
                 .ignoresSafeArea()
 
+            #if DEBUG
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    if !debugModeLabel.isEmpty {
+                        Text("FIXTURE: \(debugModeLabel)")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.yellow)
+                            .cornerRadius(3)
+                    }
+                }
+                Spacer()
+            }
+            #endif
             Group {
                 switch viewModel.sessionState {
                 case .idle:
                     IdleView(onStart: viewModel.beginSession, reduceMotion: reduceMotion)
-                        .opacity(contentOpacity)
-                        .scaleEffect(contentScale)
+                        .transition(screenTransition)
                 case .countdown:
                     CountdownView(
                         value: viewModel.countdownValue,
                         onCancel: viewModel.cancelCountdown,
                         reduceMotion: reduceMotion
                     )
-                    .opacity(contentOpacity)
-                    .scaleEffect(contentScale)
+                    .transition(screenTransition)
                 case .active:
                     ActiveView(
                         holdState: viewModel.holdState,
@@ -506,8 +586,7 @@ struct PullUpTrackerView: View {
                         showHint: viewModel.showHint,
                         reduceMotion: reduceMotion
                     )
-                    .opacity(contentOpacity)
-                    .scaleEffect(contentScale)
+                    .transition(screenTransition)
                 case .summary:
                     SummaryView(
                         reps: viewModel.reps,
@@ -516,10 +595,11 @@ struct PullUpTrackerView: View {
                         onRepeat: viewModel.repeatSession,
                         reduceMotion: reduceMotion
                     )
-                    .opacity(contentOpacity)
-                    .scaleEffect(contentScale)
+                    .transition(screenTransition)
                 }
             }
+            .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85),
+                       value: viewModel.sessionState)
         }
         #if DEBUG
         .overlay(alignment: .bottom) {
@@ -547,16 +627,30 @@ struct PullUpTrackerView: View {
             // Request HealthKit access up front so the system permission sheet
             // never interrupts the 3-2-1 countdown mid-session.
             viewModel.prepareHealthKit()
-            if reduceMotion {
-                contentOpacity = 1.0
-                contentScale = 1.0
-            } else {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    contentOpacity = 1.0
-                    contentScale = 1.0
-                }
-            }
         }
+        #if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            // Bottom-right hot corner: tap cycles deterministic UI fixtures
+            // (waiting → detecting → holding → summary → off) so every screen
+            // can be captured without depending on simulator sensor input.
+            // (Long-press isn't injectable by idb; taps are reliable. The
+            // bottom-right corner is free of system chrome on every screen.)
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 30, height: 44)
+                .onTapGesture {
+                    let modes = ["waiting", "detecting", "holding", "summary"]
+                    fixtureIndex = (fixtureIndex + 1) % (modes.count + 1)
+                    if fixtureIndex == modes.count {
+                        viewModel.debugStopFixture()
+                    } else {
+                        viewModel.debugApplyFixture(modes[fixtureIndex])
+                    }
+                    debugModeLabel = fixtureIndex == modes.count ? "" : modes[fixtureIndex]
+                }
+        }
+        .ignoresSafeArea(edges: .bottom)
+        #endif
         .persistentSystemOverlays(.hidden)
     }
 }
@@ -578,7 +672,7 @@ struct IdleView: View {
                 VStack(spacing: metrics.sectionSpacing * 1.5) {
                     Image(systemName: "figure.core.training")
                         .font(.system(size: metrics.idleIconSize))
-                        .foregroundColor(.successGreen)
+                        .foregroundColor(.orange)
                         .scaleEffect(iconScale)
                         .onAppear {
                             guard !reduceMotion else { return }
@@ -605,6 +699,8 @@ struct IdleView: View {
                 
                 Spacer(minLength: metrics.sectionSpacing)
                 
+                // Apple Workout start control: full-width vivid-green pill
+                // (HIG Buttons), black label for contrast.
                 Button(action: {
                     if !reduceMotion {
                         buttonScale = 0.95
@@ -615,12 +711,12 @@ struct IdleView: View {
                     onStart()
                 }) {
                     Text("Start Session")
-                        .font(.system(size: metrics.buttonFontSize + 1, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.oledBlack)
+                        .font(.system(size: metrics.buttonFontSize + 2, weight: .bold, design: .rounded))
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
-                        .frame(height: metrics.buttonHeight + 8)
-                        .background(Color.successGreen)
-                        .cornerRadius((metrics.buttonHeight + 8) / 2)
+                        .frame(height: 46)
+                        .background(Color.green)
+                        .clipShape(Capsule())
                 }
                 .buttonStyle(PlainButtonStyle())
                 .scaleEffect(buttonScale)
@@ -651,14 +747,17 @@ struct ActiveView: View {
 
     @State private var showStartFlash = false
     @State private var waitingPulse: CGFloat = 1.0
-    @State private var waitingRingRotation: Double = 0
     /// Shows the Pause/End confirmation overlay. Auto-dismisses after a few
     /// seconds so a stray tap can't leave the user staring at choices.
     @State private var showPauseMenu = false
     @State private var pauseMenuDismissTask: DispatchWorkItem?
 
+    // Apple Fitness vocabulary, expressed in SYSTEM colors so vibrancy and
+    // accessibility settings behave exactly like first-party apps:
+    // orange = live workout accent, blue = waiting on the user,
+    // green = completion, red = end/stop.
     private var repsColor: Color {
-        .energyOrange
+        holdState == .waiting ? Color.white.opacity(0.35) : .orange
     }
     
     private var ringTrackColor: Color {
@@ -672,10 +771,10 @@ struct ActiveView: View {
     /// is the inverse of the old scheme which turned red near completion.
     private var holdBandColor: Color {
         switch holdBand {
-        case .warming:   return .energyOrange
-        case .cruising:  return Color(red: 0.99, green: 0.80, blue: 0.18) // warm yellow
-        case .finishing: return .successGreen
-        case .none:      return .energyOrange
+        case .warming:   return .orange
+        case .cruising:  return .yellow
+        case .finishing: return .green
+        case .none:      return .orange
         }
     }
 
@@ -690,9 +789,9 @@ struct ActiveView: View {
     private var ringProgressColor: Color {
         switch holdState {
         case .waiting:
-            return .neonBlue
+            return .blue
         case .detecting:
-            return .energyOrange
+            return .orange
         case .holding:
             return holdBandColor
         }
@@ -701,9 +800,9 @@ struct ActiveView: View {
     private var phaseLabelColor: Color {
         switch holdState {
         case .waiting:
-            return .neonBlue.opacity(0.7)
+            return Color.blue.opacity(0.85)
         case .detecting:
-            return .energyOrange.opacity(0.85)
+            return .orange
         case .holding:
             return holdBandColor
         }
@@ -711,14 +810,6 @@ struct ActiveView: View {
     
     private var primaryValueColor: Color {
         Color.white.opacity(0.96)
-    }
-
-    private var endButtonBorderColor: Color {
-        Color(red: 0.58, green: 0.08, blue: 0.11)
-    }
-
-    private var endButtonFillColor: Color {
-        Color(red: 0.20, green: 0.03, blue: 0.04)
     }
 
     private var ringProgress: Double {
@@ -781,28 +872,11 @@ struct ActiveView: View {
                     .stroke(ringTrackColor, lineWidth: ringStrokeWidth)
                     .frame(width: ringDiameter, height: ringDiameter)
 
-                if holdState == .waiting {
-                    Circle()
-                        .stroke(
-                            Color.neonBlue.opacity(0.35),
-                            style: StrokeStyle(
-                                lineWidth: ringStrokeWidth,
-                                dash: [ringDiameter * 0.08, ringDiameter * 0.05]
-                            )
-                        )
-                        .frame(width: ringDiameter, height: ringDiameter)
-                        .rotationEffect(.degrees(waitingRingRotation))
-                        .onAppear {
-                            guard !reduceMotion else { return }
-                            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                                waitingRingRotation = 360
-                            }
-                        }
-                } else if holdState != .waiting {
+                if holdState != .waiting {
+                    // Waiting keeps a bare, quiet track (no dashed spinner —
+                    // "processing" is not Apple's language for "your turn").
                     // The ring fills during BOTH the ~1 s settle window
-                    // (detecting) and the hold itself, so the user always sees
-                    // confirmation progress instead of a bare track while the
-                    // machine is deciding.
+                    // (detecting) and the hold itself, sweeping smoothly.
                     Circle()
                         .trim(from: 0, to: ringProgress)
                         .stroke(
@@ -811,7 +885,10 @@ struct ActiveView: View {
                         )
                         .rotationEffect(arcRotation)
                         .frame(width: ringDiameter, height: ringDiameter)
-                        .shadow(color: ringProgressColor.opacity(0.22), radius: 6, x: 0, y: 0)
+                        .shadow(color: ringProgressColor.opacity(0.15), radius: 4, x: 0, y: 0)
+                // Activity-ring trick: values change once per second, but a 1 s
+                // LINEAR interpolation makes the arc glide through the second.
+                        .animation(reduceMotion ? nil : .linear(duration: 1.0), value: ringProgress)
                 }
 
                 Group {
@@ -820,7 +897,7 @@ struct ActiveView: View {
                         VStack(spacing: ringDiameter * 0.028) {
                             Image(systemName: "hand.raised.fill")
                                 .font(.system(size: waitingIconSize, weight: .semibold))
-                                .foregroundColor(.neonBlue)
+                                .foregroundColor(.blue)
                                 .scaleEffect(waitingPulse)
                             Text(phaseLabelText)
                                 .font(.system(size: phaseLabelSize, weight: .bold, design: .rounded))
@@ -839,7 +916,7 @@ struct ActiveView: View {
                         VStack(spacing: ringDiameter * 0.03) {
                             Image(systemName: "hand.raised.fill")
                                 .font(.system(size: waitingIconSize, weight: .semibold))
-                                .foregroundColor(.energyOrange)
+                                .foregroundColor(.orange)
                                 .scaleEffect(waitingPulse)
                             Text(phaseLabelText)
                                 .font(.system(size: phaseLabelSize * 1.25, weight: .semibold, design: .rounded))
@@ -856,6 +933,8 @@ struct ActiveView: View {
                                 .monospacedDigit()
                                 .minimumScaleFactor(0.72)
                                 .lineLimit(1)
+                                .contentTransition(.numericText())
+                                .animation(reduceMotion ? nil : .linear(duration: 0.25), value: holdSeconds)
                             Text(phaseLabelText)
                                 .font(.system(size: phaseLabelSize, weight: .medium, design: .rounded))
                                 .foregroundColor(phaseLabelColor)
@@ -885,6 +964,8 @@ struct ActiveView: View {
                         .foregroundColor(repsColor)
                         .monospacedDigit()
                         .minimumScaleFactor(0.75)
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.7), value: reps)
                         .accessibilityLabel("\(reps) sets completed")
                 }
                 .padding(.top, topInset)
@@ -899,23 +980,25 @@ struct ActiveView: View {
                         Button(action: onResume) {
                             Image(systemName: "play.fill")
                                 .font(.system(size: pauseIconSize, weight: .black))
-                                .foregroundColor(.successGreen)
+                                .foregroundColor(.green)
                                 .frame(width: pauseButtonSize, height: pauseButtonSize)
-                                .background(Circle().fill(Color(red: 0.06, green: 0.16, blue: 0.09)))
-                                .overlay(Circle().stroke(Color.successGreen.opacity(0.4), lineWidth: 1))
+                                .background(Circle().fill(Color.green.opacity(0.18)))
+                                .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
                         }
                         .buttonStyle(PlainButtonStyle())
                         .accessibilityLabel("Resume")
                     } else {
+                        // Pause is a workout CONTROL (orange), not a danger —
+                        // red stays reserved for the End action in the sheet.
                         Button {
                             presentPauseMenu()
                         } label: {
                             Image(systemName: "pause.fill")
                                 .font(.system(size: pauseIconSize, weight: .black))
-                                .foregroundColor(Color(red: 1.0, green: 0.42, blue: 0.47))
+                                .foregroundColor(.orange)
                                 .frame(width: pauseButtonSize, height: pauseButtonSize)
-                                .background(Circle().fill(endButtonFillColor))
-                                .overlay(Circle().stroke(endButtonBorderColor, lineWidth: 1))
+                                .background(Circle().fill(Color.orange.opacity(0.18)))
+                                .overlay(Circle().stroke(Color.orange.opacity(0.5), lineWidth: 1))
                         }
                         .buttonStyle(PlainButtonStyle())
                         .accessibilityLabel("Pause or end")
@@ -978,50 +1061,51 @@ struct ActiveView: View {
                                           buttonSize: CGFloat,
                                           labelSize: CGFloat) -> some View {
         ZStack {
-            Color.black.opacity(0.55)
+            Color.black.opacity(0.78)
                 .ignoresSafeArea()
                 .onTapGesture { dismissPauseMenu() }
 
+            // System-alert vocabulary (HIG Buttons): a stack of full-width,
+            // equal-height tinted buttons. Orange continues the session;
+            // red finishes it.
             VStack(spacing: ringDiameter * 0.04) {
                 Text("Pause or End?")
-                    .font(.system(size: labelSize * 1.3, weight: .bold, design: .rounded))
+                    .font(.system(size: labelSize * 1.35, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                HStack(spacing: ringDiameter * 0.05) {
+                VStack(spacing: ringDiameter * 0.03) {
                     Button {
                         dismissPauseMenu()
                         onPause()
                     } label: {
-                        VStack(spacing: ringDiameter * 0.015) {
-                            Image(systemName: "pause.circle.fill")
-                                .font(.system(size: buttonSize * 1.1))
-                            Text("Pause")
-                                .font(.system(size: labelSize, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundColor(.white)
-                        .frame(width: ringDiameter * 0.3, height: ringDiameter * 0.3)
-                        .background(Circle().fill(Color.white.opacity(0.15)))
+                        Label("Pause", systemImage: "pause.fill")
+                            .font(.system(size: labelSize * 1.25, weight: .bold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: buttonSize * 0.72)
+                            .background(Color.orange)
+                            .foregroundStyle(.black)
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .accessibilityLabel("Pause session")
 
-                    Button {
+                    Button(role: .destructive) {
                         dismissPauseMenu()
                         onEnd()
                     } label: {
-                        VStack(spacing: ringDiameter * 0.015) {
-                            Image(systemName: "stop.circle.fill")
-                                .font(.system(size: buttonSize * 1.1))
-                            Text("End")
-                                .font(.system(size: labelSize, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundColor(Color(red: 1.0, green: 0.42, blue: 0.47))
-                        .frame(width: ringDiameter * 0.3, height: ringDiameter * 0.3)
-                        .background(Circle().fill(endButtonFillColor))
-                        .overlay(Circle().stroke(endButtonBorderColor, lineWidth: 1))
+                        Label("End", systemImage: "stop.fill")
+                            .font(.system(size: labelSize * 1.25, weight: .bold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: buttonSize * 0.72)
+                            .background(Color.red)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .accessibilityLabel("End session")
                 }
             }
+            .padding(.horizontal, ringDiameter * 0.09)
             .accessibilityElement(children: .contain)
         }
     }
@@ -1060,14 +1144,14 @@ struct SummaryView: View {
                 if !showContent {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: min(w, h) * 0.22))
-                        .foregroundColor(.successGreen)
+                        .foregroundColor(.green)
                         .scaleEffect(checkmarkScale)
                 } else {
                     VStack(spacing: h * 0.025) {
                         VStack(spacing: h * 0.02) {
                             HStack(spacing: padding * 0.5) {
-                                summaryStat(icon: "figure.pullup", value: "\(reps)", label: "REPS", color: .energyOrange, w: w)
-                                summaryStat(icon: "timer", value: formatTime(totalHoldTime), label: "TIME", color: .energyOrange, w: w)
+                                summaryStat(icon: "figure.pullup", value: "\(reps)", label: "REPS", color: .orange, w: w)
+                                summaryStat(icon: "timer", value: formatTime(totalHoldTime), label: "TIME", color: .orange, w: w)
                             }
 
                             HStack(spacing: padding * 0.5) {
@@ -1083,12 +1167,12 @@ struct SummaryView: View {
                         HStack(spacing: padding * 0.4) {
                             Button(action: onRepeat) {
                                 Text("Again")
-                                    .font(.system(size: w * 0.045, weight: .bold, design: .rounded))
-                                    .foregroundColor(.successGreen)
+                                    .font(.system(size: w * 0.048, weight: .bold, design: .rounded))
+                                    .foregroundColor(.black)
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: h * 0.12)
-                                    .background(Color.successGreen.opacity(0.18))
-                                    .cornerRadius(h * 0.06)
+                                    .frame(height: 40)
+                                    .background(Color.green)
+                                    .clipShape(Capsule())
                             }
                             .buttonStyle(PlainButtonStyle())
                             .accessibilityLabel("Start another set")
@@ -1141,6 +1225,8 @@ struct SummaryView: View {
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: value)
 
             Text(label)
                 .font(.system(size: w * 0.035, weight: .semibold, design: .rounded))
@@ -1183,10 +1269,11 @@ struct CountdownView: View {
 
                     Text("\(max(value, 0))")
                         .font(.system(size: size, weight: .heavy, design: .rounded))
-                        .foregroundColor(.successGreen)
+                        .foregroundColor(.orange)
                         .monospacedDigit()
                         .scaleEffect(pulseScale)
-                        .contentTransition(.opacity)
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .linear(duration: 0.2), value: value)
                         .accessibilityLabel("\(max(value, 0))")
 
                     // One-tap exit from a mis-started countdown. Previously
