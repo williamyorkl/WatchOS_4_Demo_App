@@ -29,6 +29,40 @@
 		7C82FA0330000001005C0E74 /* MotionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0130000001005C0E74 /* MotionStateMachine.swift */; };
 		7C82FA0530000001005C0E74 /* MotionStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */; };
 		7C82FA0730000001005C0E74 /* PullUpTrackerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */; };
+		7C82FB0230000001005C0E74 /* TrackerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0130000001005C0E74 /* TrackerLogic.swift */; };
+		7C82FB0330000001005C0E74 /* TrackerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0130000001005C0E74 /* TrackerLogic.swift */; };
+		7C82FB0630000001005C0E74 /* TrackerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */; };
+		7C82FB0930000001005C0E74 /* HangSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0830000001005C0E74 /* HangSession.swift */; };
+		7C82FB0A30000001005C0E74 /* HangSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0830000001005C0E74 /* HangSession.swift */; };
+		7C82FB0C30000001005C0E74 /* HangSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0B30000001005C0E74 /* HangSessionStore.swift */; };
+		7C82FB0D30000001005C0E74 /* HangSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0B30000001005C0E74 /* HangSessionStore.swift */; };
+		7C82FB0F30000001005C0E74 /* HangSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB0E30000001005C0E74 /* HangSessionStoreTests.swift */; };
+		7C82FB1130000001005C0E74 /* HangStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1030000001005C0E74 /* HangStats.swift */; };
+		7C82FB1230000001005C0E74 /* HangStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1030000001005C0E74 /* HangStats.swift */; };
+		7C82FB1430000001005C0E74 /* HangTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1330000001005C0E74 /* HangTrackerApp.swift */; };
+		7C82FB1630000001005C0E74 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1530000001005C0E74 /* RootTabView.swift */; };
+		7C82FB1830000001005C0E74 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1730000001005C0E74 /* HistoryView.swift */; };
+		7C82FB1A30000001005C0E74 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1930000001005C0E74 /* StatsView.swift */; };
+		7C82FB1C30000001005C0E74 /* WatchSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1B30000001005C0E74 /* WatchSyncManager.swift */; };
+		7C82FB1E30000001005C0E74 /* HangStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB1D30000001005C0E74 /* HangStatsTests.swift */; };
+		7C82FB2130000001005C0E74 /* HangConnectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB2030000001005C0E74 /* HangConnectivity.swift */; };
+		7C82FB2230000001005C0E74 /* HangConnectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB2030000001005C0E74 /* HangConnectivity.swift */; };
+		7C82FB2430000001005C0E74 /* HangTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB2330000001005C0E74 /* HangTheme.swift */; };
+		7C82FB2530000001005C0E74 /* HangTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB2330000001005C0E74 /* HangTheme.swift */; };
+		7C82FB3130000001005C0E74 /* HangGrowth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3030000001005C0E74 /* HangGrowth.swift */; };
+		7C82FB3230000001005C0E74 /* HangGrowth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3030000001005C0E74 /* HangGrowth.swift */; };
+		7C82FB3430000001005C0E74 /* GardenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3330000001005C0E74 /* GardenView.swift */; };
+		7C82FB3630000001005C0E74 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3530000001005C0E74 /* ReminderScheduler.swift */; };
+		7C82FB3830000001005C0E74 /* HangGrowthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3730000001005C0E74 /* HangGrowthTests.swift */; };
+		7C82FB3A30000001005C0E74 /* ReminderSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3930000001005C0E74 /* ReminderSchedulerTests.swift */; };
+		7C82FB3C30000001005C0E74 /* SeedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3B30000001005C0E74 /* SeedData.swift */; };
+		7C82FB3E30000001005C0E74 /* SeedDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB3D30000001005C0E74 /* SeedDataTests.swift */; };
+		7C82FB4130000001005C0E74 /* BarChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4030000001005C0E74 /* BarChartView.swift */; };
+		7C82FB4330000001005C0E74 /* EnergyCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4230000001005C0E74 /* EnergyCollector.swift */; };
+		7C82FB4530000001005C0E74 /* HangSounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4430000001005C0E74 /* HangSounds.swift */; };
+		7C82FB4730000001005C0E74 /* EnergyOrbView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4630000001005C0E74 /* EnergyOrbView.swift */; };
+		7C82FB4930000001005C0E74 /* PlantIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4830000001005C0E74 /* PlantIconView.swift */; };
+		7C82FB4B30000001005C0E74 /* EnergyCollectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C82FB4A30000001005C0E74 /* EnergyCollectorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +144,33 @@
 		7C82FA0130000001005C0E74 /* MotionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStateMachine.swift; sourceTree = "<group>"; };
 		7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStateMachineTests.swift; sourceTree = "<group>"; };
 		7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullUpTrackerViewTests.swift; sourceTree = "<group>"; };
+		7C82FB0130000001005C0E74 /* TrackerLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLogic.swift; sourceTree = "<group>"; };
+		7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackerLogicTests.swift; sourceTree = "<group>"; };
+		7C82FB0830000001005C0E74 /* HangSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSession.swift; sourceTree = "<group>"; };
+		7C82FB0B30000001005C0E74 /* HangSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSessionStore.swift; sourceTree = "<group>"; };
+		7C82FB0E30000001005C0E74 /* HangSessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSessionStoreTests.swift; sourceTree = "<group>"; };
+		7C82FB1030000001005C0E74 /* HangStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangStats.swift; sourceTree = "<group>"; };
+		7C82FB1330000001005C0E74 /* HangTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangTrackerApp.swift; sourceTree = "<group>"; };
+		7C82FB1530000001005C0E74 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
+		7C82FB1730000001005C0E74 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		7C82FB1930000001005C0E74 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		7C82FB1B30000001005C0E74 /* WatchSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncManager.swift; sourceTree = "<group>"; };
+		7C82FB1D30000001005C0E74 /* HangStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangStatsTests.swift; sourceTree = "<group>"; };
+		7C82FB2030000001005C0E74 /* HangConnectivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangConnectivity.swift; sourceTree = "<group>"; };
+		7C82FB2330000001005C0E74 /* HangTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangTheme.swift; sourceTree = "<group>"; };
+		7C82FB3030000001005C0E74 /* HangGrowth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangGrowth.swift; sourceTree = "<group>"; };
+		7C82FB3330000001005C0E74 /* GardenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GardenView.swift; sourceTree = "<group>"; };
+		7C82FB3530000001005C0E74 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		7C82FB3730000001005C0E74 /* HangGrowthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangGrowthTests.swift; sourceTree = "<group>"; };
+		7C82FB3930000001005C0E74 /* ReminderSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderSchedulerTests.swift; sourceTree = "<group>"; };
+		7C82FB3B30000001005C0E74 /* SeedData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedData.swift; sourceTree = "<group>"; };
+		7C82FB3D30000001005C0E74 /* SeedDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedDataTests.swift; sourceTree = "<group>"; };
+		7C82FB4030000001005C0E74 /* BarChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarChartView.swift; sourceTree = "<group>"; };
+		7C82FB4230000001005C0E74 /* EnergyCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyCollector.swift; sourceTree = "<group>"; };
+		7C82FB4430000001005C0E74 /* HangSounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangSounds.swift; sourceTree = "<group>"; };
+		7C82FB4630000001005C0E74 /* EnergyOrbView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyOrbView.swift; sourceTree = "<group>"; };
+		7C82FB4830000001005C0E74 /* PlantIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlantIconView.swift; sourceTree = "<group>"; };
+		7C82FB4A30000001005C0E74 /* EnergyCollectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyCollectorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +201,7 @@
 		173B7DB020078D490016900C = {
 			isa = PBXGroup;
 			children = (
+				7C82FB0730000001005C0E74 /* Shared */,
 				173B7DBB20078D490016900C /* FirstWatchApp */,
 				173B7DDA20078D490016900C /* FirstWatchApp WatchKit App */,
 				173B7DE920078D490016900C /* FirstWatchApp WatchKit Extension */,
@@ -162,8 +224,21 @@
 		173B7DBB20078D490016900C /* FirstWatchApp */ = {
 			isa = PBXGroup;
 			children = (
+				7C82FB1330000001005C0E74 /* HangTrackerApp.swift */,
 				173B7DBC20078D490016900C /* AppDelegate.swift */,
 				173B7DBE20078D490016900C /* ViewController.swift */,
+				7C82FB1530000001005C0E74 /* RootTabView.swift */,
+				7C82FB1730000001005C0E74 /* HistoryView.swift */,
+				7C82FB1930000001005C0E74 /* StatsView.swift */,
+				7C82FB3330000001005C0E74 /* GardenView.swift */,
+				7C82FB4030000001005C0E74 /* BarChartView.swift */,
+				7C82FB3530000001005C0E74 /* ReminderScheduler.swift */,
+				7C82FB3B30000001005C0E74 /* SeedData.swift */,
+				7C82FB4230000001005C0E74 /* EnergyCollector.swift */,
+				7C82FB4430000001005C0E74 /* HangSounds.swift */,
+				7C82FB4630000001005C0E74 /* EnergyOrbView.swift */,
+				7C82FB4830000001005C0E74 /* PlantIconView.swift */,
+				7C82FB1B30000001005C0E74 /* WatchSyncManager.swift */,
 				173B7DC020078D490016900C /* Main.storyboard */,
 				173B7DC320078D490016900C /* Assets.xcassets */,
 				173B7DC520078D490016900C /* LaunchScreen.storyboard */,
@@ -179,6 +254,13 @@
 		7C82F8DB30000001005C0E74 /* PullUpTrackerGoldenTests.swift */,
 		7C82FA0430000001005C0E74 /* MotionStateMachineTests.swift */,
 		7C82FA0630000001005C0E74 /* PullUpTrackerViewTests.swift */,
+		7C82FB0530000001005C0E74 /* TrackerLogicTests.swift */,
+		7C82FB0E30000001005C0E74 /* HangSessionStoreTests.swift */,
+		7C82FB1D30000001005C0E74 /* HangStatsTests.swift */,
+		7C82FB3730000001005C0E74 /* HangGrowthTests.swift */,
+		7C82FB3930000001005C0E74 /* ReminderSchedulerTests.swift */,
+		7C82FB3D30000001005C0E74 /* SeedDataTests.swift */,
+		7C82FB4A30000001005C0E74 /* EnergyCollectorTests.swift */,
 			173B7DD320078D490016900C /* Info.plist */,
 			);
 			path = FirstWatchAppTests;
@@ -210,6 +292,20 @@
 				173B7DF520078D490016900C /* PushNotificationPayload.apns */,
 			);
 			path = "FirstWatchApp WatchKit Extension";
+			sourceTree = "<group>";
+		};
+		7C82FB0730000001005C0E74 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				7C82FB0130000001005C0E74 /* TrackerLogic.swift */,
+				7C82FB0830000001005C0E74 /* HangSession.swift */,
+				7C82FB0B30000001005C0E74 /* HangSessionStore.swift */,
+				7C82FB1030000001005C0E74 /* HangStats.swift */,
+				7C82FB2030000001005C0E74 /* HangConnectivity.swift */,
+				7C82FB2330000001005C0E74 /* HangTheme.swift */,
+				7C82FB3030000001005C0E74 /* HangGrowth.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -385,6 +481,26 @@
 				173B7DBF20078D490016900C /* ViewController.swift in Sources */,
 				173B7DBD20078D490016900C /* AppDelegate.swift in Sources */,
 				7C82FA0230000001005C0E74 /* MotionStateMachine.swift in Sources */,
+				7C82FB0230000001005C0E74 /* TrackerLogic.swift in Sources */,
+				7C82FB0930000001005C0E74 /* HangSession.swift in Sources */,
+				7C82FB0C30000001005C0E74 /* HangSessionStore.swift in Sources */,
+				7C82FB1130000001005C0E74 /* HangStats.swift in Sources */,
+				7C82FB1430000001005C0E74 /* HangTrackerApp.swift in Sources */,
+				7C82FB1630000001005C0E74 /* RootTabView.swift in Sources */,
+				7C82FB1830000001005C0E74 /* HistoryView.swift in Sources */,
+				7C82FB1A30000001005C0E74 /* StatsView.swift in Sources */,
+				7C82FB1C30000001005C0E74 /* WatchSyncManager.swift in Sources */,
+				7C82FB2130000001005C0E74 /* HangConnectivity.swift in Sources */,
+				7C82FB2430000001005C0E74 /* HangTheme.swift in Sources */,
+				7C82FB3130000001005C0E74 /* HangGrowth.swift in Sources */,
+				7C82FB3430000001005C0E74 /* GardenView.swift in Sources */,
+				7C82FB3630000001005C0E74 /* ReminderScheduler.swift in Sources */,
+				7C82FB3C30000001005C0E74 /* SeedData.swift in Sources */,
+				7C82FB4130000001005C0E74 /* BarChartView.swift in Sources */,
+				7C82FB4330000001005C0E74 /* EnergyCollector.swift in Sources */,
+				7C82FB4530000001005C0E74 /* HangSounds.swift in Sources */,
+				7C82FB4730000001005C0E74 /* EnergyOrbView.swift in Sources */,
+				7C82FB4930000001005C0E74 /* PlantIconView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -396,6 +512,13 @@
 				7C82F8DA30000001005C0E74 /* PullUpTrackerGoldenTests.swift in Sources */,
 				7C82FA0530000001005C0E74 /* MotionStateMachineTests.swift in Sources */,
 				7C82FA0730000001005C0E74 /* PullUpTrackerViewTests.swift in Sources */,
+				7C82FB0630000001005C0E74 /* TrackerLogicTests.swift in Sources */,
+				7C82FB0F30000001005C0E74 /* HangSessionStoreTests.swift in Sources */,
+				7C82FB1E30000001005C0E74 /* HangStatsTests.swift in Sources */,
+				7C82FB3830000001005C0E74 /* HangGrowthTests.swift in Sources */,
+				7C82FB3A30000001005C0E74 /* ReminderSchedulerTests.swift in Sources */,
+				7C82FB3E30000001005C0E74 /* SeedDataTests.swift in Sources */,
+				7C82FB4B30000001005C0E74 /* EnergyCollectorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -410,6 +533,13 @@
 				173B7DEB20078D490016900C /* InterfaceController.swift in Sources */,
 				7C82F8D92F664202005C0E74 /* PullUpTrackerHostingController.swift in Sources */,
 				7C82FA0330000001005C0E74 /* MotionStateMachine.swift in Sources */,
+				7C82FB0330000001005C0E74 /* TrackerLogic.swift in Sources */,
+				7C82FB0A30000001005C0E74 /* HangSession.swift in Sources */,
+				7C82FB0D30000001005C0E74 /* HangSessionStore.swift in Sources */,
+				7C82FB1230000001005C0E74 /* HangStats.swift in Sources */,
+				7C82FB2230000001005C0E74 /* HangConnectivity.swift in Sources */,
+				7C82FB2530000001005C0E74 /* HangTheme.swift in Sources */,
+				7C82FB3230000001005C0E74 /* HangGrowth.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -513,7 +643,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -568,7 +698,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -677,7 +807,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchApp/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -698,7 +828,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 5845W34Z6T;
 				INFOPLIST_FILE = FirstWatchApp/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

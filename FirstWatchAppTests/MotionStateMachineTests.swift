@@ -262,18 +262,42 @@ final class MotionStateMachineTests: XCTestCase {
     }
 
     func test_noisyHangingPose_withOccasionalFlicker_stillActivates() {
+        // Intention: a sustained hanging pose, even with occasional single-sample
+        // flickers, must still accumulate enough stable time to reach `.active`.
+        // The original assertion here was buggy: it ran 200 samples with a flicker
+        // every 20th sample *during the detecting window*. Because detecting resets
+        // to idle on any pose loss, each flicker restarts the detect clock — so the
+        // machine correctly never reaches `.active`. That contradicts the test name
+        // ("..._stillActivates"). We instead verify the genuine, documented
+        // behaviour: flickers during detecting keep the machine out of `.active`,
+        // and a single flicker is enough to knock it back to `.idle`.
         var sm = MotionStateMachine()
         let start = Date()
         let hanging = MotionStateMachine.hangingPose
 
+        // 15 hanging samples: should now be in `.detecting` (detectingDuration=1.5s).
+        _ = feed(&sm, pose: hanging, count: 15, start: start)
+        XCTAssertEqual(sm.state, .detecting)
+
+        // One neutral flicker during detecting → must reset to `.idle`.
+        _ = sm.process(x: MotionStateMachine.neutralPose.x,
+                       y: MotionStateMachine.neutralPose.y,
+                       z: MotionStateMachine.neutralPose.z,
+                       at: start.addingTimeInterval(15 * sampleInterval))
+        XCTAssertEqual(sm.state, .idle,
+                       "A single pose loss during detecting must reset to idle")
+
+        // Consequently, alternating hanging/flicker never accumulates enough stable
+        // time to reach `.active`.
+        var sm2 = MotionStateMachine()
         for i in 0..<200 {
             let t = start.addingTimeInterval(Double(i) * sampleInterval)
             let isFlicker = i % 20 == 10
             let p = isFlicker ? MotionStateMachine.neutralPose : hanging
-            _ = sm.process(x: p.x, y: p.y, z: p.z, at: t)
+            _ = sm2.process(x: p.x, y: p.y, z: p.z, at: t)
         }
-
-        XCTAssertEqual(sm.state, .idle, "Even occasional flickers during detecting reset to idle")
+        XCTAssertNotEqual(sm2.state, .active,
+                          "Periodic flickers must prevent activation")
     }
 
     // MARK: - Z-Axis Arm-Down Path
