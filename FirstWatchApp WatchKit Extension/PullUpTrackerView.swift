@@ -761,7 +761,7 @@ struct ActiveView: View {
     }
     
     private var ringTrackColor: Color {
-        Color.white.opacity(0.08)
+        Color.white.opacity(0.12)
     }
     
     /// Colour for the holding ring, banded by progress. Semantics go from
@@ -894,14 +894,14 @@ struct ActiveView: View {
                 Group {
                     switch holdState {
                     case .waiting:
-                        VStack(spacing: ringDiameter * 0.028) {
+                        VStack(spacing: ringDiameter * 0.03) {
                             Image(systemName: "hand.raised.fill")
-                                .font(.system(size: waitingIconSize, weight: .semibold))
+                                .font(.system(size: waitingIconSize * 0.82, weight: .medium))
                                 .foregroundColor(.blue)
                                 .scaleEffect(waitingPulse)
                             Text(phaseLabelText)
-                                .font(.system(size: phaseLabelSize, weight: .bold, design: .rounded))
-                                .foregroundColor(phaseLabelColor)
+                                .font(.system(size: phaseLabelSize * 1.15, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
                         }
                         .onAppear {
                             guard !reduceMotion else { return }
@@ -959,7 +959,10 @@ struct ActiveView: View {
             }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
-                    Text("\(reps)")
+                    if reps == 0 && holdState == .waiting {
+                        EmptyView()
+                    } else {
+                        Text("\(reps)")
                         .font(.system(size: repsValueSize, weight: .bold, design: .rounded))
                         .foregroundColor(repsColor)
                         .monospacedDigit()
@@ -967,6 +970,7 @@ struct ActiveView: View {
                         .contentTransition(.numericText())
                         .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.7), value: reps)
                         .accessibilityLabel("\(reps) sets completed")
+                    }
                 }
                 .padding(.top, topInset)
             }
@@ -995,10 +999,17 @@ struct ActiveView: View {
                         } label: {
                             Image(systemName: "pause.fill")
                                 .font(.system(size: pauseIconSize, weight: .black))
-                                .foregroundColor(.orange)
+                                .foregroundColor(holdState == .waiting ? .white : .orange)
                                 .frame(width: pauseButtonSize, height: pauseButtonSize)
-                                .background(Circle().fill(Color.orange.opacity(0.18)))
-                                .overlay(Circle().stroke(Color.orange.opacity(0.5), lineWidth: 1))
+                                .background(Circle().fill(
+                                    holdState == .waiting
+                                        ? Color.white.opacity(0.12)
+                                        : Color.orange.opacity(0.18)))
+                                .overlay(Circle().stroke(
+                                    holdState == .waiting
+                                        ? Color.white.opacity(0.25)
+                                        : Color.orange.opacity(0.5),
+                                    lineWidth: 1))
                         }
                         .buttonStyle(PlainButtonStyle())
                         .accessibilityLabel("Pause or end")
@@ -1061,29 +1072,30 @@ struct ActiveView: View {
                                           buttonSize: CGFloat,
                                           labelSize: CGFloat) -> some View {
         ZStack {
-            Color.black.opacity(0.78)
+            Color.black.opacity(0.55)
                 .ignoresSafeArea()
                 .onTapGesture { dismissPauseMenu() }
 
-            // System-alert vocabulary (HIG Buttons): a stack of full-width,
-            // equal-height tinted buttons. Orange continues the session;
-            // red finishes it.
-            VStack(spacing: ringDiameter * 0.04) {
+            // True watchOS-alert vocabulary: a dark rounded CARD carrying the
+            // title + buttons (kills background bleed-through), translucent
+            // capsules with white labels; the destructive action is RED TEXT,
+            // not a red fill. No icons — system confirmations are text-only.
+            VStack(spacing: ringDiameter * 0.035) {
                 Text("Pause or End?")
                     .font(.system(size: labelSize * 1.35, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                VStack(spacing: ringDiameter * 0.03) {
+                VStack(spacing: ringDiameter * 0.026) {
                     Button {
                         dismissPauseMenu()
                         onPause()
                     } label: {
-                        Label("Pause", systemImage: "pause.fill")
-                            .font(.system(size: labelSize * 1.25, weight: .bold, design: .rounded))
+                        Text("Pause")
+                            .font(.system(size: labelSize * 1.3, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: buttonSize * 0.72)
-                            .background(Color.orange)
-                            .foregroundStyle(.black)
+                            .background(Color.white.opacity(0.18))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -1093,19 +1105,23 @@ struct ActiveView: View {
                         dismissPauseMenu()
                         onEnd()
                     } label: {
-                        Label("End", systemImage: "stop.fill")
-                            .font(.system(size: labelSize * 1.25, weight: .bold, design: .rounded))
+                        Text("End")
+                            .font(.system(size: labelSize * 1.3, weight: .bold, design: .rounded))
+                            .foregroundColor(.red)
                             .frame(maxWidth: .infinity)
                             .frame(height: buttonSize * 0.72)
-                            .background(Color.red)
-                            .foregroundStyle(.white)
+                            .background(Color.white.opacity(0.18))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(PlainButtonStyle())
                     .accessibilityLabel("End session")
                 }
             }
-            .padding(.horizontal, ringDiameter * 0.09)
+            .padding(.horizontal, ringDiameter * 0.055)
+            .padding(.vertical, ringDiameter * 0.05)
+            .background(RoundedRectangle(cornerRadius: ringDiameter * 0.1)
+                .fill(Color(white: 0.10)))
+            .padding(.horizontal, ringDiameter * 0.06)
             .accessibilityElement(children: .contain)
         }
     }
